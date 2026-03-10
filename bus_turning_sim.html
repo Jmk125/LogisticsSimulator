@@ -1,0 +1,1639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bus Turning Simulator</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@300;400;600;700&display=swap');
+
+  :root {
+    --bg: #0d1117;
+    --panel: #111820;
+    --panel2: #161f2a;
+    --border: #1e3048;
+    --accent: #00d4ff;
+    --accent2: #00ff9d;
+    --warn: #ff6b35;
+    --text: #c9d8e8;
+    --dim: #4a6278;
+    --bus: #1a6be0;
+    --trail: rgba(255,80,40,0.35);
+    --arc-left: rgba(0,212,255,0.55);
+    --arc-right: rgba(0,255,157,0.55);
+    --grid: rgba(30,48,72,0.6);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Barlow Condensed', sans-serif;
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* ── SIDEBAR ── */
+  #sidebar {
+    width: 260px;
+    min-width: 260px;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    z-index: 10;
+  }
+
+  #sidebar::-webkit-scrollbar { width: 4px; }
+  #sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .sidebar-header {
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel2);
+  }
+  .sidebar-header h1 {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .sidebar-header p {
+    font-size: 11px;
+    color: var(--dim);
+    margin-top: 2px;
+    font-family: 'Share Tech Mono', monospace;
+  }
+
+  .section {
+    border-bottom: 1px solid var(--border);
+  }
+  .section-header {
+    padding: 8px 14px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--dim);
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--panel2);
+    user-select: none;
+  }
+  .section-header:hover { color: var(--text); }
+  .section-header .arrow { transition: transform 0.2s; font-size: 9px; }
+  .section.collapsed .arrow { transform: rotate(-90deg); }
+  .section-body { padding: 10px 14px; }
+  .section.collapsed .section-body { display: none; }
+
+  label {
+    display: block;
+    font-size: 11px;
+    color: var(--dim);
+    margin-bottom: 3px;
+    letter-spacing: 0.04em;
+  }
+
+  .field { margin-bottom: 8px; }
+
+  .field-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+  .field-row label { margin: 0; flex: 1; }
+
+  input[type=number], input[type=range], select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    border-radius: 3px;
+    padding: 4px 7px;
+    width: 100%;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  input[type=number]:focus, select:focus { border-color: var(--accent); }
+  input[type=range] {
+    padding: 0;
+    height: 18px;
+    cursor: pointer;
+    accent-color: var(--accent);
+  }
+
+  .num-with-unit {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+  .num-with-unit input { flex: 1; }
+  .unit-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--dim);
+    white-space: nowrap;
+  }
+
+  .derived-value {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    color: var(--accent2);
+    padding: 4px 8px;
+    background: rgba(0,255,157,0.06);
+    border: 1px solid rgba(0,255,157,0.15);
+    border-radius: 3px;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .btn {
+    width: 100%;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    background: var(--panel2);
+    color: var(--text);
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s;
+    margin-bottom: 5px;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.primary {
+    background: rgba(0,212,255,0.08);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .btn.primary:hover { background: rgba(0,212,255,0.18); }
+  .btn.danger { border-color: var(--warn); color: var(--warn); }
+  .btn.danger:hover { background: rgba(255,107,53,0.12); }
+  .btn.active {
+    background: rgba(255,80,40,0.15);
+    border-color: #ff5028;
+    color: #ff8060;
+    animation: pulse-rec 1.2s ease-in-out infinite;
+  }
+  @keyframes pulse-rec {
+    0%,100% { box-shadow: 0 0 0 0 rgba(255,80,40,0); }
+    50% { box-shadow: 0 0 8px 2px rgba(255,80,40,0.35); }
+  }
+
+  .btn-row {
+    display: flex;
+    gap: 5px;
+    margin-bottom: 5px;
+  }
+  .btn-row .btn { margin: 0; }
+
+  .toggle-group {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+  .toggle-btn {
+    flex: 1;
+    padding: 5px 6px;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--dim);
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .toggle-btn.on { background: rgba(0,212,255,0.12); border-color: var(--accent); color: var(--accent); }
+  .toggle-btn.on.green { background: rgba(0,255,157,0.10); border-color: var(--accent2); color: var(--accent2); }
+
+  .radio-group { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+  .radio-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .radio-dot {
+    width: 13px; height: 13px;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    transition: border-color 0.15s;
+  }
+  .radio-dot.on { border-color: var(--accent); }
+  .radio-dot.on::after {
+    content: '';
+    width: 7px; height: 7px;
+    background: var(--accent);
+    border-radius: 50%;
+  }
+
+  .info-box {
+    font-size: 10px;
+    color: var(--dim);
+    padding: 5px 8px;
+    border-left: 2px solid var(--border);
+    line-height: 1.5;
+    margin-bottom: 6px;
+  }
+  .info-box.accent { border-color: var(--accent); color: #6eb8cc; }
+
+  .status-dot {
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--dim);
+    margin-right: 5px;
+  }
+  .status-dot.green { background: var(--accent2); box-shadow: 0 0 6px var(--accent2); }
+  .status-dot.red { background: var(--warn); box-shadow: 0 0 6px var(--warn); animation: pulse-rec 1s infinite; }
+
+  select option { background: #1a2535; }
+
+  /* ── CANVAS AREA ── */
+  #canvas-wrap {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: var(--bg);
+  }
+
+  canvas { display: block; }
+  canvas.measuring { cursor: crosshair; }
+
+  #measure-banner {
+    display: none;
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,212,255,0.12);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    padding: 6px 14px;
+    border-radius: 3px;
+    pointer-events: none;
+    z-index: 6;
+    letter-spacing: 0.06em;
+    backdrop-filter: blur(4px);
+  }
+  #measure-banner.visible { display: block; }
+
+  /* ── TOOLBAR ── */
+  #toolbar {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    display: flex;
+    gap: 6px;
+    z-index: 5;
+  }
+  .tool-btn {
+    padding: 6px 12px;
+    background: rgba(13,17,23,0.88);
+    border: 1px solid var(--border);
+    color: var(--dim);
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border-radius: 3px;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+    transition: all 0.15s;
+  }
+  .tool-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .tool-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(0,212,255,0.08); }
+
+  /* ── HUD ── */
+  #hud {
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    color: var(--dim);
+    line-height: 1.7;
+    pointer-events: none;
+    background: rgba(13,17,23,0.7);
+    padding: 6px 10px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+    backdrop-filter: blur(4px);
+  }
+
+  #scale-bar {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 3px;
+    pointer-events: none;
+  }
+  .scale-line {
+    height: 8px;
+    border-left: 2px solid var(--dim);
+    border-right: 2px solid var(--dim);
+    border-bottom: 2px solid var(--dim);
+    min-width: 60px;
+  }
+  .scale-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--dim);
+  }
+
+  /* scale modal — floats over sidebar, canvas stays fully clickable */
+  #scale-modal {
+    display: none;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 260px;
+    z-index: 30;
+    pointer-events: none;
+  }
+  #scale-modal.open { display: block; }
+  .modal-box {
+    pointer-events: all;
+    background: var(--panel);
+    border: 1px solid var(--accent);
+    border-top: 3px solid var(--accent);
+    padding: 14px 16px;
+    box-shadow: 4px 0 24px rgba(0,212,255,0.18);
+  }
+  .modal-box h2 {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+  .modal-box p { font-size: 11px; color: var(--dim); margin-bottom: 8px; line-height: 1.5; }
+  .modal-box .field { margin-bottom: 8px; }
+  .modal-box label { color: var(--text); font-size: 11px; margin-bottom: 3px; }
+  .modal-row { display: flex; gap: 5px; margin-top: 10px; }
+  .modal-row .btn { margin: 0; font-size: 11px; padding: 6px 8px; }
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<div id="sidebar">
+  <div class="sidebar-header">
+    <h1>Bus Turn Sim</h1>
+    <p>2D Top-Down · Imperial · v1.1</p>
+  </div>
+
+  <!-- PRESET -->
+  <div class="section" id="sec-preset">
+    <div class="section-header" onclick="toggleSection('sec-preset')">
+      Vehicle Preset <span class="arrow">▼</span>
+    </div>
+    <div class="section-body">
+      <div class="field">
+        <label>Preset</label>
+        <select id="preset-select" onchange="applyPreset()">
+          <option value="BUS40">40ft Transit Bus</option>
+          <option value="BUS60">60ft Articulated Bus</option>
+          <option value="BUS35">35ft Transit Bus</option>
+          <option value="COACH">Motor Coach (45ft)</option>
+          <option value="SCHOOLBUS">School Bus (Type D)</option>
+          <option value="CUSTOM">Custom</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- DIMENSIONS -->
+  <div class="section collapsed" id="sec-dim">
+    <div class="section-header" onclick="toggleSection('sec-dim')">
+      Dimensions <span class="arrow">▼</span>
+    </div>
+    <div class="section-body">
+      <div class="field">
+        <label>Wheelbase (ft)</label>
+        <div class="num-with-unit">
+          <input type="number" id="wheelbase" value="25.0" min="3" max="82" step="0.1" oninput="onDimChange()">
+          <span class="unit-label">ft</span>
+        </div>
+      </div>
+      <div class="field">
+        <label>Bus Width (ft)</label>
+        <div class="num-with-unit">
+          <input type="number" id="bus_width" value="8.5" min="1.5" max="16" step="0.1" oninput="onDimChange()">
+          <span class="unit-label">ft</span>
+        </div>
+      </div>
+      <div class="field">
+        <label>Front Overhang (ft)</label>
+        <div class="num-with-unit">
+          <input type="number" id="front_overhang" value="8.5" min="0" max="26" step="0.1" oninput="onDimChange()">
+          <span class="unit-label">ft</span>
+        </div>
+      </div>
+      <div class="field">
+        <label>Rear Overhang (ft)</label>
+        <div class="num-with-unit">
+          <input type="number" id="rear_overhang" value="7.0" min="0" max="26" step="0.1" oninput="onDimChange()">
+          <span class="unit-label">ft</span>
+        </div>
+      </div>
+      <div class="derived-value">
+        <span>Total Length</span>
+        <span id="total-length-display">40.5 ft</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- TURNING RADIUS -->
+  <div class="section collapsed" id="sec-turn">
+    <div class="section-header" onclick="toggleSection('sec-turn')">
+      Min Turning Radius <span class="arrow">▼</span>
+    </div>
+    <div class="section-body">
+      <div class="field">
+        <label>Rear Axle Radius (ft)</label>
+        <div class="num-with-unit">
+          <input type="number" id="min_turn_radius" value="38.0" min="3" max="164" step="0.5" oninput="onDimChange()">
+          <span class="unit-label">ft</span>
+        </div>
+      </div>
+      <div class="field">
+        <label>Arc Preview Distance (ft)</label>
+        <input type="range" id="arc_dist" min="20" max="330" value="100" step="5" oninput="onDimChange()">
+        <div style="font-family:monospace;font-size:11px;color:var(--accent);text-align:right" id="arc-dist-label">100 ft</div>
+      </div>
+      <label style="margin-bottom:4px">Show Turn Arcs</label>
+      <div class="toggle-group">
+        <button class="toggle-btn on" id="toggle-left" onclick="toggleArc('left')">◀ Left</button>
+        <button class="toggle-btn on green" id="toggle-right" onclick="toggleArc('right')">Right ▶</button>
+      </div>
+      <div class="info-box accent">Green band = swept front-axle path at minimum turn radius</div>
+    </div>
+  </div>
+
+  <!-- DRIVE MODE -->
+  <div class="section collapsed" id="sec-drive">
+    <div class="section-header" onclick="toggleSection('sec-drive')">
+      Drive Controls <span class="arrow">▼</span>
+    </div>
+    <div class="section-body">
+      <div class="field">
+        <label>Constraint Mode</label>
+        <div class="radio-group" id="drive-mode-group">
+          <div class="radio-row" onclick="setDriveMode('FREE')">
+            <div class="radio-dot" id="radio-FREE"></div><span>Free Drag</span>
+          </div>
+          <div class="radio-row" onclick="setDriveMode('AUTO')">
+            <div class="radio-dot on" id="radio-AUTO"></div><span>Auto Left/Right</span>
+          </div>
+          <div class="radio-row" onclick="setDriveMode('LEFT')">
+            <div class="radio-dot" id="radio-LEFT"></div><span>Follow Left Arc</span>
+          </div>
+          <div class="radio-row" onclick="setDriveMode('RIGHT')">
+            <div class="radio-dot" id="radio-RIGHT"></div><span>Follow Right Arc</span>
+          </div>
+          <div class="radio-row" onclick="setDriveMode('STRAIGHT')">
+            <div class="radio-dot" id="radio-STRAIGHT"></div><span>Go Straight</span>
+          </div>
+          <div class="radio-row" onclick="setDriveMode('STEER')">
+            <div class="radio-dot" id="radio-STEER"></div><span>Steering Pad</span>
+          </div>
+        </div>
+      </div>
+      <div id="steer-sensitivity-row" class="field" style="display:none">
+        <label>Steer Sensitivity</label>
+        <input type="range" id="steer_sens" min="0.05" max="2" value="0.35" step="0.05" oninput="updateSteerLabel()">
+        <div style="font-family:monospace;font-size:11px;color:var(--accent);text-align:right" id="steer-sens-label">0.35</div>
+      </div>
+      <div class="info-box" id="drive-info">Drag the bus front axle (arrow) freely anywhere.</div>
+      <div style="margin-top:4px;font-size:11px;color:var(--dim)">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="status-text">Drag front axle to move</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- TRAIL -->
+  <div class="section collapsed" id="sec-trail">
+    <div class="section-header" onclick="toggleSection('sec-trail')">
+      Swept Path Trail <span class="arrow">▼</span>
+    </div>
+    <div class="section-body">
+      <div class="btn-row">
+        <button class="btn primary" id="trail-btn" onclick="toggleTrail()">▶ Start Recording</button>
+        <button class="btn danger" onclick="clearTrail()" style="flex:0 0 auto;width:auto;padding:7px 10px">✕ Clear</button>
+      </div>
+      <div class="field" style="margin-top:6px">
+        <label>Min Move Distance (ft)</label>
+        <input type="range" id="trail_min_dist" min="0.2" max="6.6" value="1.0" step="0.2" oninput="updateTrailLabel()">
+        <div style="font-family:monospace;font-size:11px;color:var(--accent);text-align:right" id="trail-dist-label">1.0 ft</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BACKGROUND IMAGE -->
+  <div class="section collapsed" id="sec-bg">
+    <div class="section-header" onclick="toggleSection('sec-bg')">
+      Background Drawing <span class="arrow">▼</span>
+    </div>
+    <div class="section-body">
+      <div class="field">
+        <label>Import Image (site plan, PDF screenshot, etc.)</label>
+        <input type="file" id="bg-file" accept="image/*" onchange="loadBgImage(event)"
+          style="font-size:11px;padding:4px;color:var(--dim);border:1px dashed var(--border);background:var(--bg);width:100%;border-radius:3px;cursor:pointer">
+      </div>
+      <button class="btn" onclick="openScaleModal()" id="scale-btn" disabled>📐 Set Scale from Drawing</button>
+      <div class="field" style="margin-top:6px">
+        <label>Opacity</label>
+        <input type="range" id="bg-opacity" min="0.05" max="1" value="0.92" step="0.05" oninput="redraw()">
+      </div>
+      <div class="btn-row">
+        <button class="btn" onclick="centerBgOnView()">Center Drawing</button>
+        <button class="btn danger" onclick="clearBg()">Remove</button>
+      </div>
+      <div class="info-box" style="margin-top:4px">Drawing moves with the view (pan/zoom work on everything). Use "Set Scale" to calibrate real-world units by clicking two known points.</div>
+    </div>
+  </div>
+
+  <!-- RESET -->
+  <div class="section collapsed" id="sec-reset">
+    <div class="section-header" onclick="toggleSection('sec-reset')">
+      Scene <span class="arrow">▼</span>
+    </div>
+    <div class="section-body">
+      <button class="btn primary" onclick="resetBus()">↺ Reset Bus Position</button>
+      <button class="btn" onclick="resetView()">↺ Reset View</button>
+      <div class="field" style="margin-top:6px">
+        <label>Display Units</label>
+        <select id="unit-select" onchange="onDimChange()">
+          <option value="ft" selected>Imperial (ft)</option>
+          <option value="m">Metric (m)</option>
+        </select>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CANVAS -->
+<div id="canvas-wrap">
+  <canvas id="main-canvas"></canvas>
+
+  <div id="measure-banner">SCALE CALIBRATION — Click point 1 on drawing</div>
+
+  <div id="toolbar">
+    <button class="tool-btn active" id="tool-select" onclick="setTool('select')">Select</button>
+    <button class="tool-btn" id="tool-pan" onclick="setTool('pan')">Pan</button>
+    <button class="tool-btn" id="tool-scale-measure" onclick="startScaleMeasure()" id="tool-measure">Measure Scale</button>
+  </div>
+
+  <div id="hud">
+    <div id="hud-pos">Cursor: —</div>
+    <div id="hud-bus">Bus heading: —</div>
+    <div id="hud-r">Turn radius: —</div>
+    <div id="hud-mode">Mode: Free Drag</div>
+  </div>
+
+  <div id="scale-bar">
+    <div class="scale-line" id="scale-bar-line" style="width:80px"></div>
+    <div class="scale-label" id="scale-bar-label">— m</div>
+  </div>
+</div>
+
+<!-- SCALE MODAL — overlays sidebar only, canvas stays clickable -->
+<div id="scale-modal">
+  <div class="modal-box">
+    <h2>📐 Set Drawing Scale</h2>
+    <p>Click <strong style="color:var(--accent)">two points</strong> on the drawing (canvas, right side) that represent a known distance, then enter that distance below.</p>
+    <p id="scale-status" style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--accent2);padding:5px 0;">⬤ Waiting for point 1 on canvas...</p>
+    <div class="field">
+      <label>Known Distance</label>
+      <div class="num-with-unit">
+        <input type="number" id="scale-known-dist" value="100" min="0.01" step="1">
+        <select id="scale-unit" style="width:60px">
+          <option value="ft" selected>ft</option>
+          <option value="m">m</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-row">
+      <button class="btn primary" onclick="applyScale()">✓ Apply</button>
+      <button class="btn" onclick="closeScaleModal()">✕ Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// PRESETS
+// ─────────────────────────────────────────────────────────────────────────────
+const PRESETS = {
+  BUS40:     { wheelbase:7.62,  bus_width:2.59, front_overhang:2.59, rear_overhang:2.13, min_turn_radius:11.58 },
+  BUS60:     { wheelbase:6.55,  bus_width:2.59, front_overhang:2.44, rear_overhang:2.59, min_turn_radius:10.97 },
+  BUS35:     { wheelbase:6.40,  bus_width:2.59, front_overhang:2.13, rear_overhang:1.83, min_turn_radius:10.36 },
+  COACH:     { wheelbase:6.86,  bus_width:2.59, front_overhang:2.74, rear_overhang:2.44, min_turn_radius:12.19 },
+  SCHOOLBUS: { wheelbase:5.94,  bus_width:2.44, front_overhang:1.83, rear_overhang:1.52, min_turn_radius:9.75  },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────────────────────────────────────
+const canvas = document.getElementById('main-canvas');
+const ctx = canvas.getContext('2d');
+
+// View transform: world → screen  =>  screen = (worldPt * pxPerM + pan)
+let view = { pxPerM: 15, panX: 0, panY: 0 };
+
+// Bus state (world meters, Y up = forward)
+let bus = {
+  rearX: 0, rearY: 0,
+  frontX: 0, frontY: 7.62,   // will be set on init
+  dragging: false,
+  dragTarget: null, // 'front'
+};
+
+// Trail: array of {fl, fr, rl, rr}  in world coords
+let trail = [];
+let trailActive = false;
+let trailLastX = null, trailLastY = null;
+
+// Arcs
+let showLeft = true, showRight = true;
+
+// Drive mode
+let driveMode = 'AUTO';
+let steerAngle = 0;
+
+// Background image — stored in WORLD SPACE
+// bgWorldX/Y = world coords of the image top-left corner
+// bgMetersPerPx = how many meters one image pixel represents (set by scale calibration)
+let bgImage = null;
+let bgWorldX = 0, bgWorldY = 0;       // world-space position of image top-left
+let bgMetersPerPx = 0.1;              // default: 1px = 0.1m (will be calibrated)
+let bgOpacity = 0.6;
+
+// Scale measurement
+let scalePickPoints = [];
+let scaleMeasuring = false;
+
+// Tool mode
+let activeTool = 'select';
+
+// Pan
+let panning = false;
+let panStart = { x: 0, y: 0 };
+let panStartView = { panX: 0, panY: 0 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────────────────────────────────────
+function init() {
+  resize();
+  view.pxPerM = 4 / 0.3048;  // ~4 px per foot default
+  window.addEventListener('resize', resize);
+  canvas.addEventListener('mousedown', onMouseDown);
+  canvas.addEventListener('mousemove', onMouseMove);
+  canvas.addEventListener('mouseup',   onMouseUp);
+  canvas.addEventListener('wheel',     onWheel, { passive:false });
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+  resetBus();
+  applyPreset();
+  updateDerivedLabels();
+  updateScaleBar();
+  requestAnimationFrame(loop);
+}
+
+function resize() {
+  canvas.width  = canvas.parentElement.clientWidth;
+  canvas.height = canvas.parentElement.clientHeight;
+  // Center view on bus at start
+  view.panX = canvas.width  / 2;
+  view.panY = canvas.height / 2;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COORDINATE TRANSFORMS
+// ─────────────────────────────────────────────────────────────────────────────
+function worldToScreen(wx, wy) {
+  return {
+    x: wx * view.pxPerM + view.panX,
+    y: -wy * view.pxPerM + view.panY  // Y flipped: world up = screen up
+  };
+}
+function screenToWorld(sx, sy) {
+  return {
+    x: (sx - view.panX) / view.pxPerM,
+    y: -(sy - view.panY) / view.pxPerM
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BUS PHYSICS (bicycle model matching the Blender addon)
+// ─────────────────────────────────────────────────────────────────────────────
+function getProps() {
+  // UI inputs are in FEET. Physics engine works in METERS internally.
+  const FT = 0.3048;
+  return {
+    wheelbase:       (parseFloat(document.getElementById('wheelbase').value)        || 25.0) * FT,
+    bus_width:       (parseFloat(document.getElementById('bus_width').value)        || 8.5)  * FT,
+    front_overhang:  (parseFloat(document.getElementById('front_overhang').value)   || 8.5)  * FT,
+    rear_overhang:   (parseFloat(document.getElementById('rear_overhang').value)    || 7.0)  * FT,
+    min_turn_radius: (parseFloat(document.getElementById('min_turn_radius').value)  || 38.0) * FT,
+    arc_dist:        (parseFloat(document.getElementById('arc_dist').value)         || 100)  * FT,
+    trail_min_dist:  (parseFloat(document.getElementById('trail_min_dist').value)   || 1.0)  * FT,
+    steer_sens:       parseFloat(document.getElementById('steer_sens').value)       || 0.35,
+  };
+}
+
+function getBusHeading() {
+  const dx = bus.frontX - bus.rearX;
+  const dy = bus.frontY - bus.rearY;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-6) return { hx: 0, hy: 1 };
+  return { hx: dx/len, hy: dy/len };
+}
+
+// Snap rear axle to be exactly wheelbase behind front
+function snapRear(props) {
+  const { hx, hy } = getBusHeading();
+  const wb = props.wheelbase;
+  bus.rearX = bus.frontX - hx * wb;
+  bus.rearY = bus.frontY - hy * wb;
+}
+
+// perpendicular left of heading
+function perpLeft(hx, hy) { return { px: -hy, py: hx }; }
+function perpRight(hx, hy) { return { px: hy, py: -hx }; }
+
+function rotVec2D(vx, vy, angle) {
+  const c = Math.cos(angle), s = Math.sin(angle);
+  return { rx: vx*c - vy*s, ry: vx*s + vy*c };
+}
+
+// Constrained front position modes  (matches Blender addon logic exactly)
+function constrainFront(props, targetX, targetY) {
+  const { hx, hy } = getBusHeading();
+  const R = Math.max(props.min_turn_radius, 0.001);
+  const wb = props.wheelbase;
+  const Rf = Math.sqrt(R*R + wb*wb);
+
+  function straightSnap() {
+    const relX = targetX - bus.rearX, relY = targetY - bus.rearY;
+    const along = relX*hx + relY*hy;
+    const minAlong = Math.max(along, wb);
+    return { nx: bus.rearX + hx*minAlong, ny: bus.rearY + hy*minAlong };
+  }
+
+  function arcSnap(side) {
+    const { px: rx, py: ry } = perpRight(hx, hy);
+    const pivX = bus.rearX - side * rx * R;
+    const pivY = bus.rearY - side * ry * R;
+    let relX = targetX - pivX, relY = targetY - pivY;
+    const rlen = Math.hypot(relX, relY);
+    if (rlen < 1e-6) { relX = hx; relY = hy; } else { relX /= rlen; relY /= rlen; }
+    return { nx: pivX + relX*Rf, ny: pivY + relY*Rf };
+  }
+
+  if (driveMode === 'STRAIGHT') return straightSnap();
+  if (driveMode === 'LEFT')     return arcSnap(+1);
+  if (driveMode === 'RIGHT')    return arcSnap(-1);
+
+  if (driveMode === 'AUTO') {
+    const { px: rx, py: ry } = perpRight(hx, hy);
+    const relX = targetX - bus.rearX, relY = targetY - bus.rearY;
+    const lateral = relX*rx + relY*ry;
+    const deadband = Math.max(R * 0.04, 0.08);
+    if (Math.abs(lateral) <= deadband) return straightSnap();
+    return arcSnap(lateral < 0 ? +1 : -1);
+  }
+
+  // FREE or STEER: handled elsewhere
+  return { nx: targetX, ny: targetY };
+}
+
+// Steering pad mode (from addon: positional steering relative to front axle)
+let steerSmoothAngle = 0;
+function steeringPadStep(props, targetX, targetY) {
+  const { hx, hy } = getBusHeading();
+  const { px: rx, py: ry } = perpRight(hx, hy);
+  const relX = targetX - bus.frontX;
+  const relY = targetY - bus.frontY;
+  const fwd  = relX*hx + relY*hy;
+  const lat  = relX*rx + relY*ry;
+  const wb   = props.wheelbase;
+  const maxSteer = Math.atan(wb / Math.max(props.min_turn_radius, 0.001));
+  const deadband  = Math.max(wb * 0.03, 0.08);
+  const fwdDead   = Math.max(wb * 0.05, 0.10);
+  const steerZone = Math.max(wb * (0.60 / Math.max(props.steer_sens, 0.05)), 0.60);
+  const maxStep   = Math.max(Math.min(wb * 0.08, 0.90), 0.20);
+
+  let targetSt = 0;
+  if (Math.abs(lat) > deadband) {
+    const signed = lat - Math.sign(lat)*deadband;
+    const cmd = Math.max(-1, Math.min(1, signed/steerZone));
+    targetSt = -cmd * maxSteer;
+  }
+  steerSmoothAngle += (targetSt - steerSmoothAngle) * 0.30;
+  steerSmoothAngle  = Math.max(-maxSteer, Math.min(maxSteer, steerSmoothAngle));
+
+  let fwdStep = 0;
+  if (Math.abs(fwd) > fwdDead) {
+    const sf = fwd - Math.sign(fwd)*fwdDead;
+    fwdStep = Math.max(-maxStep, Math.min(maxStep, sf * 0.22));
+  }
+
+  // Advance with bicycle model
+  const rearPos = { x: bus.rearX, y: bus.rearY };
+  let newRear = { x: bus.rearX, y: bus.rearY };
+  let newHead = { hx, hy };
+  if (Math.abs(fwdStep) > 1e-9 && Math.abs(steerSmoothAngle) > 1e-6) {
+    const tanv = Math.tan(steerSmoothAngle);
+    const R    = wb / tanv;
+    const { px: lx, py: ly } = perpLeft(hx, hy);
+    const cx = bus.rearX + lx * R, cy = bus.rearY + ly * R;
+    const relRx = bus.rearX - cx, relRy = bus.rearY - cy;
+    const yaw   = fwdStep / R;
+    const { rx: nrx, ry: nry } = rotVec2D(relRx, relRy, yaw);
+    newRear = { x: cx + nrx, y: cy + nry };
+    const { rx: nhx, ry: nhy } = rotVec2D(hx, hy, yaw);
+    const hl = Math.hypot(nhx, nhy);
+    newHead = { hx: nhx/hl, hy: nhy/hl };
+  } else if (Math.abs(fwdStep) > 1e-9) {
+    newRear = { x: bus.rearX + hx*fwdStep, y: bus.rearY + hy*fwdStep };
+  }
+
+  bus.rearX  = newRear.x;
+  bus.rearY  = newRear.y;
+  bus.frontX = newRear.x + newHead.hx * wb;
+  bus.frontY = newRear.y + newHead.hy * wb;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ARC GEOMETRY
+// ─────────────────────────────────────────────────────────────────────────────
+const ARC_SEG = 60;
+
+function buildArcPath(props, side) {
+  // side: +1 = left, -1 = right
+  const R_rear  = Math.max(props.min_turn_radius, 0.001);
+  const wb      = props.wheelbase;
+  const R_front = Math.sqrt(R_rear*R_rear + wb*wb);
+  const bw      = props.bus_width;
+  const guideHalf = Math.max(Math.min(bw * 0.16, 0.5), 0.18);
+  const R_in  = Math.max(R_front - guideHalf, 0.05);
+  const R_out = R_front + guideHalf;
+
+  const { hx, hy } = getBusHeading();
+  const { px: rx, py: ry } = perpRight(hx, hy);
+
+  const pivX = bus.rearX - side * rx * R_rear;
+  const pivY = bus.rearY - side * ry * R_rear;
+
+  const toFX = bus.frontX - pivX, toFY = bus.frontY - pivY;
+  const startAng = Math.atan2(toFY, toFX);
+  const totalAng = props.arc_dist / R_rear;
+  const step     = side * totalAng / ARC_SEG;
+
+  const inner = [], outer = [];
+  for (let i = 0; i <= ARC_SEG; i++) {
+    const a = startAng + step * i;
+    const ca = Math.cos(a), sa = Math.sin(a);
+    inner.push({ x: pivX + R_in  * ca, y: pivY + R_in  * sa });
+    outer.push({ x: pivX + R_out * ca, y: pivY + R_out * sa });
+  }
+  return { inner, outer };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TRAIL
+// ─────────────────────────────────────────────────────────────────────────────
+function recordTrailStep(props) {
+  const { hx, hy } = getBusHeading();
+  const rearPos2dX = bus.rearX, rearPos2dY = bus.rearY;
+  const hw = props.bus_width / 2;
+  const fo = props.front_overhang;
+  const ro = props.rear_overhang;
+  const rx = -hy, ry = hx; // right vector
+
+  const fcX = bus.frontX + hx*fo, fcY = bus.frontY + hy*fo;
+  const rcX = bus.rearX  - hx*ro, rcY = bus.rearY  - hy*ro;
+
+  trail.push({
+    fl: { x: fcX - rx*hw, y: fcY - ry*hw },
+    fr: { x: fcX + rx*hw, y: fcY + ry*hw },
+    rl: { x: rcX - rx*hw, y: rcY - ry*hw },
+    rr: { x: rcX + rx*hw, y: rcY + ry*hw },
+  });
+  trailLastX = rearPos2dX;
+  trailLastY = rearPos2dY;
+}
+
+function checkTrail(props) {
+  if (!trailActive) return;
+  if (trailLastX === null) {
+    recordTrailStep(props); return;
+  }
+  const d = Math.hypot(bus.rearX - trailLastX, bus.rearY - trailLastY);
+  if (d >= props.trail_min_dist) recordTrailStep(props);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RENDER
+// ─────────────────────────────────────────────────────────────────────────────
+function loop() {
+  redraw();
+  requestAnimationFrame(loop);
+}
+
+function redraw() {
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  // Background fill
+  ctx.fillStyle = '#0d1117';
+  ctx.fillRect(0, 0, W, H);
+
+  drawGrid();
+  if (bgImage) drawBg();
+  drawTrail();
+  drawArcs();
+  drawBus();
+  if (scaleMeasuring) drawScalePicks();
+  updateHUD();
+  updateScaleBar();
+}
+
+function drawGrid() {
+  const minorSpacing = getGridSpacing();
+  const majorSpacing = minorSpacing * 5;
+
+  ctx.save();
+  const startX = Math.floor((0 - view.panX) / view.pxPerM / minorSpacing) * minorSpacing;
+  const startY = Math.floor((0 - view.panY) / (-view.pxPerM) / minorSpacing) * minorSpacing;
+  const endX   = (canvas.width  - view.panX) / view.pxPerM;
+  const endY   = (canvas.height - view.panY) / (-view.pxPerM);
+
+  for (let wx = startX; wx <= endX + minorSpacing; wx += minorSpacing) {
+    const isMajor = Math.abs(Math.round(wx / majorSpacing) * majorSpacing - wx) < 0.001;
+    const sx = worldToScreen(wx, 0).x;
+    ctx.strokeStyle = isMajor ? 'rgba(30,48,72,0.8)' : 'rgba(20,32,50,0.5)';
+    ctx.lineWidth = isMajor ? 1 : 0.5;
+    ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, canvas.height); ctx.stroke();
+  }
+  for (let wy = Math.min(startY, endY); wy <= Math.max(startY, endY) + minorSpacing; wy += minorSpacing) {
+    const isMajor = Math.abs(Math.round(wy / majorSpacing) * majorSpacing - wy) < 0.001;
+    const sy = worldToScreen(0, wy).y;
+    ctx.strokeStyle = isMajor ? 'rgba(30,48,72,0.8)' : 'rgba(20,32,50,0.5)';
+    ctx.lineWidth = isMajor ? 1 : 0.5;
+    ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(canvas.width, sy); ctx.stroke();
+  }
+
+  // Axis labels on major lines
+  ctx.font = '9px Share Tech Mono, monospace';
+  ctx.fillStyle = 'rgba(74,98,120,0.8)';
+  for (let wx = Math.ceil(startX / majorSpacing) * majorSpacing; wx <= endX + majorSpacing; wx += majorSpacing) {
+    const sx = worldToScreen(wx, 0).x;
+    const valFt = Math.round(wx * 3.28084);
+    ctx.fillText(valFt + "'", sx + 3, canvas.height - 6);
+  }
+  ctx.restore();
+}
+
+function getGridSpacing() {
+  const p = view.pxPerM;
+  if (p >= 60)  return 1;
+  if (p >= 20)  return 2;
+  if (p >= 8)   return 5;
+  if (p >= 3)   return 10;
+  if (p >= 1.5) return 20;
+  return 50;
+}
+
+function drawBg() {
+  if (!bgImage) return;
+  // The image top-left is at world position (bgWorldX, bgWorldY).
+  // Each image pixel represents bgMetersPerPx meters.
+  // Screen position of image top-left:
+  const sx = bgWorldX * view.pxPerM + view.panX;
+  // World Y is flipped (world up = screen up), so world top-left maps to:
+  // image goes downward in screen space (world Y decreases as screen Y increases)
+  const imgHeightM = bgImage.height * bgMetersPerPx;
+  const sy = -(bgWorldY) * view.pxPerM + view.panY;  // bgWorldY is the TOP of image in world
+  const drawW = bgImage.width  * bgMetersPerPx * view.pxPerM;
+  const drawH = bgImage.height * bgMetersPerPx * view.pxPerM;
+
+  ctx.save();
+  ctx.globalAlpha = parseFloat(document.getElementById('bg-opacity').value);
+  ctx.drawImage(bgImage, sx, sy, drawW, drawH);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawTrail() {
+  if (trail.length < 2) return;
+  ctx.save();
+  ctx.fillStyle   = 'rgba(255,70,30,0.28)';
+  ctx.strokeStyle = 'rgba(255,90,40,0.7)';
+  ctx.lineWidth   = 0.5;
+
+  for (let i = 0; i < trail.length - 1; i++) {
+    const a = trail[i], b = trail[i+1];
+    const afl = worldToScreen(a.fl.x, a.fl.y);
+    const afr = worldToScreen(a.fr.x, a.fr.y);
+    const arl = worldToScreen(a.rl.x, a.rl.y);
+    const arr = worldToScreen(a.rr.x, a.rr.y);
+    const bfl = worldToScreen(b.fl.x, b.fl.y);
+    const bfr = worldToScreen(b.fr.x, b.fr.y);
+    const brl = worldToScreen(b.rl.x, b.rl.y);
+    const brr = worldToScreen(b.rr.x, b.rr.y);
+    ctx.beginPath();
+    ctx.moveTo(afl.x, afl.y);
+    ctx.lineTo(bfl.x, bfl.y);
+    ctx.lineTo(brl.x, brl.y);
+    ctx.lineTo(arl.x, arl.y);
+    ctx.closePath(); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(afr.x, afr.y);
+    ctx.lineTo(bfr.x, bfr.y);
+    ctx.lineTo(brr.x, brr.y);
+    ctx.lineTo(arr.x, arr.y);
+    ctx.closePath(); ctx.fill();
+    // Connector at front
+    ctx.beginPath();
+    ctx.moveTo(afl.x, afl.y); ctx.lineTo(afr.x, afr.y); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawArcs() {
+  const props = getProps();
+  if (showLeft) {
+    drawArc(buildArcPath(props, +1), true);
+  }
+  if (showRight) {
+    drawArc(buildArcPath(props, -1), false);
+  }
+}
+
+function drawArc(arc, isLeft) {
+  ctx.save();
+  ctx.globalAlpha = 0.7;
+  const color = isLeft ? '#00d4ff' : '#00ff9d';
+
+  ctx.beginPath();
+  const p0 = worldToScreen(arc.inner[0].x, arc.inner[0].y);
+  ctx.moveTo(p0.x, p0.y);
+  for (let i = 1; i < arc.inner.length; i++) {
+    const p = worldToScreen(arc.inner[i].x, arc.inner[i].y);
+    ctx.lineTo(p.x, p.y);
+  }
+  for (let i = arc.outer.length - 1; i >= 0; i--) {
+    const p = worldToScreen(arc.outer[i].x, arc.outer[i].y);
+    ctx.lineTo(p.x, p.y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = color + '28';
+  ctx.fill();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+
+  // Centerline
+  ctx.globalAlpha = 0.9;
+  ctx.beginPath();
+  for (let i = 0; i < arc.inner.length; i++) {
+    const ix = (arc.inner[i].x + arc.outer[i].x) / 2;
+    const iy = (arc.inner[i].y + arc.outer[i].y) / 2;
+    const p = worldToScreen(ix, iy);
+    i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawBus() {
+  const props = getProps();
+  const { hx, hy } = getBusHeading();
+  const rx = -hy, ry = hx;
+  const hw = props.bus_width / 2;
+  const fo = props.front_overhang;
+  const ro = props.rear_overhang;
+
+  // Body corners
+  const bl = worldToScreen(bus.rearX  - hx*ro - rx*hw, bus.rearY  - hy*ro - ry*hw);
+  const br = worldToScreen(bus.rearX  - hx*ro + rx*hw, bus.rearY  - hy*ro + ry*hw);
+  const fl = worldToScreen(bus.frontX + hx*fo - rx*hw, bus.frontY + hy*fo - ry*hw);
+  const fr = worldToScreen(bus.frontX + hx*fo + rx*hw, bus.frontY + hy*fo + ry*hw);
+
+  ctx.save();
+
+  // Body fill
+  ctx.beginPath();
+  ctx.moveTo(bl.x, bl.y);
+  ctx.lineTo(br.x, br.y);
+  ctx.lineTo(fr.x, fr.y);
+  ctx.lineTo(fl.x, fl.y);
+  ctx.closePath();
+  ctx.fillStyle   = 'rgba(26,107,224,0.35)';
+  ctx.fill();
+  ctx.strokeStyle = '#4a9eff';
+  ctx.lineWidth   = 1.5;
+  ctx.stroke();
+
+  // Front indicator line
+  const frontL = worldToScreen(bus.frontX - rx*hw, bus.frontY - ry*hw);
+  const frontR = worldToScreen(bus.frontX + rx*hw, bus.frontY + ry*hw);
+  ctx.strokeStyle = '#00d4ff';
+  ctx.lineWidth   = 2;
+  ctx.beginPath();
+  ctx.moveTo(frontL.x, frontL.y);
+  ctx.lineTo(frontR.x, frontR.y);
+  ctx.stroke();
+
+  // Rear axle dot
+  const rearS = worldToScreen(bus.rearX, bus.rearY);
+  ctx.beginPath();
+  ctx.arc(rearS.x, rearS.y, 4, 0, Math.PI*2);
+  ctx.fillStyle = '#4a9eff';
+  ctx.fill();
+
+  // Front axle arrow (draggable)
+  const frontS = worldToScreen(bus.frontX, bus.frontY);
+  ctx.beginPath();
+  ctx.arc(frontS.x, frontS.y, bus.dragging && bus.dragTarget === 'front' ? 7 : 5, 0, Math.PI*2);
+  ctx.fillStyle   = '#00d4ff';
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth   = 1.5;
+  ctx.fill(); ctx.stroke();
+
+  // Direction arrow
+  const arrowLen = Math.min(props.wheelbase * 0.3, 2.5) * view.pxPerM;
+  const aS = worldToScreen(bus.frontX, bus.frontY);
+  ctx.beginPath();
+  ctx.moveTo(aS.x, aS.y);
+  ctx.lineTo(aS.x + hx*arrowLen, aS.y - hy*arrowLen);
+  ctx.strokeStyle = '#00d4ff88';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawScalePicks() {
+  ctx.save();
+  scalePickPoints.forEach((p, i) => {
+    ctx.beginPath();
+    ctx.arc(p.sx, p.sy, 6, 0, Math.PI*2);
+    ctx.fillStyle   = i === 0 ? '#ff6b35' : '#00ff9d';
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth   = 1.5;
+    ctx.fill(); ctx.stroke();
+    ctx.font        = 'bold 11px Share Tech Mono, monospace';
+    ctx.fillStyle   = '#fff';
+    ctx.fillText(i + 1, p.sx + 9, p.sy - 6);
+  });
+  if (scalePickPoints.length === 2) {
+    const a = scalePickPoints[0], b = scalePickPoints[1];
+    ctx.beginPath();
+    ctx.moveTo(a.sx, a.sy);
+    ctx.lineTo(b.sx, b.sy);
+    ctx.strokeStyle = '#ffcc44';
+    ctx.lineWidth   = 1.5;
+    ctx.setLineDash([4, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.restore();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HUD
+// ─────────────────────────────────────────────────────────────────────────────
+let cursorWorldX = 0, cursorWorldY = 0;
+function updateHUD() {
+  const M2FT = 3.28084;
+  document.getElementById('hud-pos').textContent =
+    `Cursor: ${(cursorWorldX*M2FT).toFixed(1)}', ${(cursorWorldY*M2FT).toFixed(1)}'`;
+  const { hx, hy } = getBusHeading();
+  const ang = (Math.atan2(hx, hy) * 180 / Math.PI + 360) % 360;
+  document.getElementById('hud-bus').textContent = `Heading: ${ang.toFixed(1)}°`;
+  const props = getProps();
+  document.getElementById('hud-r').textContent =
+    `Min turn R: ${(props.min_turn_radius*M2FT).toFixed(0)}' rear axle`;
+  const modeNames = { FREE:'Free Drag', AUTO:'Auto Constrained', LEFT:'Constrained Left',
+                       RIGHT:'Constrained Right', STRAIGHT:'Constrained Straight', STEER:'Steering Pad' };
+  document.getElementById('hud-mode').textContent = `Mode: ${modeNames[driveMode]}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MOUSE EVENTS
+// ─────────────────────────────────────────────────────────────────────────────
+function getCanvasPos(e) {
+  const r = canvas.getBoundingClientRect();
+  return { sx: e.clientX - r.left, sy: e.clientY - r.top };
+}
+
+function hitTestFrontAxle(sx, sy) {
+  const { x: fx, y: fy } = worldToScreen(bus.frontX, bus.frontY);
+  return Math.hypot(sx - fx, sy - fy) < 12;
+}
+
+function onMouseDown(e) {
+  const { sx, sy } = getCanvasPos(e);
+
+  if (scaleMeasuring) {
+    if (e.button === 0) {
+      const w = screenToWorld(sx, sy);
+      scalePickPoints.push({ sx, sy, wx: w.x, wy: w.y });
+      if (scalePickPoints.length === 1) {
+        document.getElementById('scale-status').textContent = '⬤ Point 1 set ✓ — click point 2...';
+        document.getElementById('measure-banner').textContent = 'SCALE CALIBRATION — Click point 2 on drawing';
+      } else {
+        document.getElementById('scale-status').textContent = '● Both points set ✓ — enter distance and click Apply';
+        document.getElementById('measure-banner').textContent = 'SCALE CALIBRATION — Both points set. Click Apply in panel.';
+        scaleMeasuring = false;
+        canvas.classList.remove('measuring');
+      }
+    }
+    return;
+  }
+
+  // Middle mouse or space = pan
+  if (e.button === 1 || (e.button === 0 && activeTool === 'pan')) {
+    panning = true;
+    panStart = { x: sx, y: sy };
+    panStartView = { panX: view.panX, panY: view.panY };
+    canvas.style.cursor = 'grabbing';
+    return;
+  }
+
+  if (e.button === 0) {
+    if (hitTestFrontAxle(sx, sy)) {
+      bus.dragging = true;
+      bus.dragTarget = 'front';
+      steerSmoothAngle = 0;
+      canvas.style.cursor = 'grabbing';
+    }
+  }
+}
+
+function onMouseMove(e) {
+  const { sx, sy } = getCanvasPos(e);
+  const world = screenToWorld(sx, sy);
+  cursorWorldX = world.x;
+  cursorWorldY = world.y;
+
+  if (panning) {
+    view.panX = panStartView.panX + (sx - panStart.x);
+    view.panY = panStartView.panY + (sy - panStart.y);
+    return;
+  }
+
+  if (!bus.dragging) {
+    canvas.style.cursor = hitTestFrontAxle(sx, sy) ? 'grab' : (activeTool === 'pan' ? 'grab' : 'default');
+    return;
+  }
+
+  const props = getProps();
+  const tx = world.x, ty = world.y;
+
+  if (driveMode === 'FREE') {
+    bus.frontX = tx;
+    bus.frontY = ty;
+    snapRear(props);
+  } else if (driveMode === 'STEER') {
+    steeringPadStep(props, tx, ty);
+  } else {
+    const { nx, ny } = constrainFront(props, tx, ty);
+    bus.frontX = nx;
+    bus.frontY = ny;
+    snapRear(props);
+  }
+
+  checkTrail(props);
+}
+
+function onMouseUp(e) {
+  bus.dragging = false;
+  panning      = false;
+  canvas.style.cursor = hitTestFrontAxle(...(()=>{
+    const r = canvas.getBoundingClientRect();
+    return [e.clientX-r.left, e.clientY-r.top];
+  })()) ? 'grab' : 'default';
+}
+
+function onWheel(e) {
+  e.preventDefault();
+  const { sx, sy } = getCanvasPos(e);
+  const factor = e.deltaY < 0 ? 1.12 : 1/1.12;
+  const wx = (sx - view.panX) / view.pxPerM;
+  const wy = (sy - view.panY) / view.pxPerM;
+  view.pxPerM = Math.max(0.5, Math.min(300, view.pxPerM * factor));
+  view.panX = sx - wx * view.pxPerM;
+  view.panY = sy - wy * view.pxPerM;
+  updateScaleBar();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCALE BAR
+// ─────────────────────────────────────────────────────────────────────────────
+function updateScaleBar() {
+  const targetPx = 80;
+  const rawFt = (targetPx / view.pxPerM) * 3.28084;
+  const niceFt = niceRoundFt(rawFt);
+  const actualPx = (niceFt / 3.28084) * view.pxPerM;
+  document.getElementById('scale-bar-line').style.width = actualPx + 'px';
+  document.getElementById('scale-bar-label').textContent = niceFt + "'";
+}
+
+function niceRoundFt(v) {
+  // Nice imperial increments: 1,2,5,10,20,50,100,200,500...
+  const nice = [1,2,5,10,20,50,100,200,500,1000,2000,5000];
+  for (const n of nice) { if (n >= v * 0.7) return n; }
+  return nice[nice.length - 1];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UI CONTROLS
+// ─────────────────────────────────────────────────────────────────────────────
+function toggleSection(id) {
+  document.getElementById(id).classList.toggle('collapsed');
+}
+
+function applyPreset() {
+  const preset = document.getElementById('preset-select').value;
+  if (!PRESETS[preset]) return;
+  const d = PRESETS[preset];
+  const M2FT = 3.28084;
+  document.getElementById('wheelbase').value      = (d.wheelbase      * M2FT).toFixed(1);
+  document.getElementById('bus_width').value      = (d.bus_width      * M2FT).toFixed(1);
+  document.getElementById('front_overhang').value = (d.front_overhang * M2FT).toFixed(1);
+  document.getElementById('rear_overhang').value  = (d.rear_overhang  * M2FT).toFixed(1);
+  document.getElementById('min_turn_radius').value= (d.min_turn_radius* M2FT).toFixed(1);
+  onDimChange();
+  resetBus();
+}
+
+function onDimChange() {
+  document.getElementById('preset-select').value = 'CUSTOM';
+  // Total length in feet (all inputs are in ft)
+  const wb  = parseFloat(document.getElementById('wheelbase').value) || 0;
+  const fo  = parseFloat(document.getElementById('front_overhang').value) || 0;
+  const ro  = parseFloat(document.getElementById('rear_overhang').value) || 0;
+  const totalFt = wb + fo + ro;
+  document.getElementById('total-length-display').textContent =
+    `${totalFt.toFixed(1)} ft  (${(totalFt*0.3048).toFixed(2)} m)`;
+  const arcFt = parseFloat(document.getElementById('arc_dist').value) || 100;
+  document.getElementById('arc-dist-label').textContent = arcFt + ' ft';
+}
+
+function updateDerivedLabels() { onDimChange(); }
+
+function setDriveMode(mode) {
+  driveMode = mode;
+  steerSmoothAngle = 0;
+  document.querySelectorAll('.radio-dot').forEach(d => d.classList.remove('on'));
+  document.getElementById('radio-' + mode).classList.add('on');
+  document.getElementById('steer-sensitivity-row').style.display =
+    mode === 'STEER' ? 'block' : 'none';
+  const infos = {
+    FREE:     'Drag the bus front axle (blue dot) freely anywhere.',
+    AUTO:     'Cursor auto-selects left/straight/right arc based on position.',
+    LEFT:     'Front axle snaps to the minimum left-turn radius arc.',
+    RIGHT:    'Front axle snaps to the minimum right-turn radius arc.',
+    STRAIGHT: 'Bus moves straight along its current heading.',
+    STEER:    'Positional steering pad: ahead/back = move, left/right = steer.',
+  };
+  document.getElementById('drive-info').textContent = infos[mode];
+  setStatus(mode !== 'FREE', mode !== 'FREE');
+}
+
+function setStatus(constrained, active) {
+  const dot = document.getElementById('status-dot');
+  const txt = document.getElementById('status-text');
+  dot.className = 'status-dot' + (active ? ' green' : '');
+  txt.textContent = constrained ? 'Constrained — drag front axle' : 'Free drag — drag front axle';
+}
+
+function toggleArc(side) {
+  if (side === 'left') {
+    showLeft = !showLeft;
+    document.getElementById('toggle-left').classList.toggle('on', showLeft);
+  } else {
+    showRight = !showRight;
+    document.getElementById('toggle-right').classList.toggle('on', showRight);
+    document.getElementById('toggle-right').classList.toggle('green', showRight);
+  }
+}
+
+function toggleTrail() {
+  trailActive = !trailActive;
+  const btn = document.getElementById('trail-btn');
+  if (trailActive) {
+    btn.textContent = '⏸ Stop Recording';
+    btn.className   = 'btn active';
+    trailLastX = trailLastY = null;
+    document.getElementById('status-dot').className = 'status-dot red';
+    document.getElementById('status-text').textContent = 'Recording trail...';
+  } else {
+    btn.textContent = '▶ Start Recording';
+    btn.className   = 'btn primary';
+    setStatus(driveMode !== 'FREE', false);
+  }
+}
+
+function clearTrail() {
+  trail = [];
+  trailLastX = trailLastY = null;
+  if (trailActive) {
+    trailActive = false;
+    document.getElementById('trail-btn').textContent = '▶ Start Recording';
+    document.getElementById('trail-btn').className = 'btn primary';
+  }
+}
+
+function resetBus() {
+  const props = getProps();
+  bus.rearX  = 0; bus.rearY  = 0;
+  bus.frontX = 0; bus.frontY = props.wheelbase;
+  steerSmoothAngle = 0;
+}
+
+function resetView() {
+  view.pxPerM = 4 / 0.3048;  // ~4 px per foot
+  view.panX   = canvas.width  / 2;
+  view.panY   = canvas.height / 2;
+  updateScaleBar();
+}
+
+function setTool(t) {
+  activeTool = t;
+  document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+  const el = document.getElementById('tool-' + t);
+  if (el) el.classList.add('active');
+}
+
+function updateSteerLabel() {
+  document.getElementById('steer-sens-label').textContent =
+    parseFloat(document.getElementById('steer_sens').value).toFixed(2);
+}
+function updateTrailLabel() {
+  document.getElementById('trail-dist-label').textContent =
+    parseFloat(document.getElementById('trail_min_dist').value).toFixed(1) + ' ft';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BACKGROUND IMAGE
+// ─────────────────────────────────────────────────────────────────────────────
+function loadBgImage(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const img = new Image();
+    img.onload = function() {
+      bgImage = img;
+      // Default scale: assume image is ~200ft wide (a reasonable site plan guess)
+      // User will calibrate with "Set Scale"
+      bgMetersPerPx = (200 * 0.3048) / img.width;
+      // Place top-left of image at world center
+      const imgWidthM  = img.width  * bgMetersPerPx;
+      const imgHeightM = img.height * bgMetersPerPx;
+      bgWorldX = -imgWidthM  / 2;
+      bgWorldY =  imgHeightM / 2;  // world Y up: top of image is at positive Y
+      document.getElementById('scale-btn').disabled = false;
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function centerBgOnView() {
+  if (!bgImage) return;
+  // Re-center image at world origin
+  const imgWidthM  = bgImage.width  * bgMetersPerPx;
+  const imgHeightM = bgImage.height * bgMetersPerPx;
+  bgWorldX = -imgWidthM  / 2;
+  bgWorldY =  imgHeightM / 2;
+}
+
+function clearBg() {
+  bgImage = null;
+  document.getElementById('bg-file').value = '';
+  document.getElementById('scale-btn').disabled = true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCALE CALIBRATION
+// The user clicks two points on the drawing. We measure the pixel distance
+// between them on screen, convert to image pixels, then compute how many
+// meters each image pixel represents. This sets bgMetersPerPx.
+// ─────────────────────────────────────────────────────────────────────────────
+function openScaleModal() {
+  if (!bgImage) { alert('Import a background image first.'); return; }
+  scalePickPoints = [];
+  scaleMeasuring  = true;
+  document.getElementById('scale-modal').classList.add('open');
+  document.getElementById('scale-status').textContent = '⬤ Waiting for point 1 on canvas...';
+  document.getElementById('measure-banner').textContent = 'SCALE CALIBRATION — Click point 1 on drawing';
+  document.getElementById('measure-banner').classList.add('visible');
+  canvas.classList.add('measuring');
+  setTool('select');
+}
+
+function closeScaleModal() {
+  scalePickPoints = [];
+  scaleMeasuring  = false;
+  document.getElementById('scale-modal').classList.remove('open');
+  document.getElementById('measure-banner').classList.remove('visible');
+  canvas.classList.remove('measuring');
+}
+
+function startScaleMeasure() {
+  openScaleModal();
+}
+
+function applyScale() {
+  if (scalePickPoints.length < 2) {
+    alert('Click two points on the drawing first.');
+    return;
+  }
+  const a = scalePickPoints[0], b = scalePickPoints[1];
+  // Distance between the two picked points in screen pixels
+  const screenDist = Math.hypot(b.sx - a.sx, b.sy - a.sy);
+  // That same distance in world meters (using current view.pxPerM)
+  const worldDistM = screenDist / view.pxPerM;
+  // That same distance in image pixels
+  const imgPixDist = worldDistM / bgMetersPerPx;
+
+  let knownDist = parseFloat(document.getElementById('scale-known-dist').value);
+  const unit    = document.getElementById('scale-unit').value;
+  if (unit === 'ft') knownDist *= 0.3048;  // convert to meters
+  if (screenDist < 2 || knownDist <= 0) { alert('Invalid measurement — pick two distinct points.'); return; }
+
+  // New meters-per-pixel for the image
+  const newMPP = knownDist / imgPixDist;
+
+  // Re-anchor: keep the first pick point at the same world location
+  // Point A was at world coords (a.wx, a.wy), which was at image pixel:
+  // imgPxX = (a.wx - bgWorldX) / bgMetersPerPx
+  // After scale change we want same imgPxX to map back to same world point.
+  const imgPxX = (a.wx - bgWorldX) / bgMetersPerPx;
+  const imgPxY = (bgWorldY - a.wy) / bgMetersPerPx;  // Y flipped
+  bgMetersPerPx = newMPP;
+  bgWorldX = a.wx - imgPxX * newMPP;
+  bgWorldY = a.wy + imgPxY * newMPP;
+
+  closeScaleModal();
+  updateScaleBar();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// KEYBOARD SHORTCUTS
+// ─────────────────────────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (e.code === 'Space') { e.preventDefault(); setTool('pan'); }
+  if (e.key === 'r' || e.key === 'R') resetBus();
+  if (e.key === 't' || e.key === 'T') toggleTrail();
+  if (e.key === 'c' || e.key === 'C') clearTrail();
+  if (e.key === 'Escape') { closeScaleModal(); scaleMeasuring = false; setTool('select'); }
+  if (e.key === '1') setDriveMode('FREE');
+  if (e.key === '2') setDriveMode('AUTO');
+  if (e.key === '3') setDriveMode('STEER');
+});
+document.addEventListener('keyup', e => {
+  if (e.code === 'Space') setTool('select');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// START
+// ─────────────────────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>
