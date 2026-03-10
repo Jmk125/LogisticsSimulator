@@ -418,11 +418,18 @@
       <div class="field">
         <label>Preset</label>
         <select id="preset-select" onchange="applyPreset()">
-          <option value="BUS40">40ft Transit Bus</option>
-          <option value="BUS60">60ft Articulated Bus</option>
-          <option value="BUS35">35ft Transit Bus</option>
-          <option value="COACH">Motor Coach (45ft)</option>
-          <option value="SCHOOLBUS">School Bus (Type D)</option>
+          <optgroup label="── Transit Buses ──">
+            <option value="BUS40">40ft Transit Bus</option>
+            <option value="BUS60">60ft Articulated Bus</option>
+            <option value="BUS35">35ft Transit Bus</option>
+            <option value="COACH">Motor Coach (45ft)</option>
+            <option value="SCHOOLBUS">School Bus (Type D)</option>
+          </optgroup>
+          <optgroup label="── Tractor-Trailers ──">
+            <option value="SEMI53">Semi-Truck + 53ft Trailer</option>
+            <option value="SEMI48">Semi-Truck + 48ft Trailer</option>
+            <option value="SEMI28">Semi-Truck + 28ft Pup</option>
+          </optgroup>
           <option value="CUSTOM">Custom</option>
         </select>
       </div>
@@ -466,6 +473,59 @@
       <div class="derived-value">
         <span>Total Length</span>
         <span id="total-length-display">40.5 ft</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- TRAILER (ARTICULATED) -->
+  <div class="section collapsed" id="sec-trailer">
+    <div class="section-header" onclick="toggleSection('sec-trailer')">
+      Articulated Trailer <span class="arrow">▼</span>
+    </div>
+    <div class="section-body">
+      <label style="display:flex;align-items:center;gap:7px;cursor:pointer;margin-bottom:10px;font-size:12px">
+        <input type="checkbox" id="articulated-enabled" onchange="onArticulatedToggle()">
+        Enable Articulated Trailer
+      </label>
+      <div id="trailer-hint" class="info-box">
+        Check above or select a semi-truck preset to enable trailer physics. Pivot is at the fifth-wheel kingpin.
+      </div>
+      <div id="trailer-fields" style="display:none">
+        <div class="field">
+          <label>Kingpin Setback (ft)</label>
+          <div class="num-with-unit">
+            <input type="number" id="kingpin_setback" value="2.0" min="0" max="10" step="0.1" oninput="onDimChange()">
+            <span class="unit-label">ft</span>
+          </div>
+        </div>
+        <div class="field">
+          <label>Trailer Wheelbase (ft)</label>
+          <div class="num-with-unit">
+            <input type="number" id="trailer_wheelbase" value="37.5" min="10" max="160" step="0.5" oninput="onDimChange()">
+            <span class="unit-label">ft</span>
+          </div>
+        </div>
+        <div class="field">
+          <label>Trailer Rear Overhang (ft)</label>
+          <div class="num-with-unit">
+            <input type="number" id="trailer_rear_overhang" value="3.0" min="0" max="16" step="0.1" oninput="onDimChange()">
+            <span class="unit-label">ft</span>
+          </div>
+        </div>
+        <div class="field">
+          <label>Trailer Width (ft)</label>
+          <div class="num-with-unit">
+            <input type="number" id="trailer_width" value="8.5" min="4" max="14" step="0.1" oninput="onDimChange()">
+            <span class="unit-label">ft</span>
+          </div>
+        </div>
+        <div class="derived-value">
+          <span>Trailer Body Length</span>
+          <span id="trailer-length-display">—</span>
+        </div>
+        <div class="info-box accent" style="margin-top:4px">
+          Trailer follows the hitch realistically — rear axle sweeps a tighter arc than the cab on turns.
+        </div>
       </div>
     </div>
   </div>
@@ -653,11 +713,32 @@
 // PRESETS
 // ─────────────────────────────────────────────────────────────────────────────
 const PRESETS = {
+  // ── Transit Buses ──
   BUS40:     { wheelbase:7.62,  bus_width:2.59, front_overhang:2.59, rear_overhang:2.13, min_turn_radius:11.58 },
   BUS60:     { wheelbase:6.55,  bus_width:2.59, front_overhang:2.44, rear_overhang:2.59, min_turn_radius:10.97 },
   BUS35:     { wheelbase:6.40,  bus_width:2.59, front_overhang:2.13, rear_overhang:1.83, min_turn_radius:10.36 },
   COACH:     { wheelbase:6.86,  bus_width:2.59, front_overhang:2.74, rear_overhang:2.44, min_turn_radius:12.19 },
   SCHOOLBUS: { wheelbase:5.94,  bus_width:2.44, front_overhang:1.83, rear_overhang:1.52, min_turn_radius:9.75  },
+  // ── Tractor-Trailers (articulated — pivot at fifth wheel / kingpin) ──
+  // Tractor props drive the cab; trailer follows via articulated joint physics.
+  // kingpin_setback: dist from tractor rear axle to fifth-wheel coupling (m)
+  // trailer_wheelbase: kingpin to trailer rear axle (m)
+  // trailer_rear_overhang: trailer rear axle to rear bumper (m)
+  SEMI53: {
+    wheelbase:6.10, bus_width:2.59, front_overhang:1.22, rear_overhang:0.61, min_turn_radius:12.19,
+    is_articulated:true, kingpin_setback:0.61,
+    trailer_wheelbase:12.50, trailer_rear_overhang:1.22, trailer_width:2.59,
+  },
+  SEMI48: {
+    wheelbase:6.10, bus_width:2.59, front_overhang:1.22, rear_overhang:0.61, min_turn_radius:12.19,
+    is_articulated:true, kingpin_setback:0.61,
+    trailer_wheelbase:11.58, trailer_rear_overhang:1.22, trailer_width:2.59,
+  },
+  SEMI28: {
+    wheelbase:4.88, bus_width:2.59, front_overhang:0.91, rear_overhang:0.30, min_turn_radius:10.67,
+    is_articulated:true, kingpin_setback:0.30,
+    trailer_wheelbase:6.71, trailer_rear_overhang:0.61, trailer_width:2.59,
+  },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -677,10 +758,14 @@ let bus = {
   dragTarget: null, // 'front'
 };
 
-// Trail: array of {fl, fr, rl, rr}  in world coords
+// Trail: array of {fl, fr, rl, rr, trailer?}  in world coords
 let trail = [];
 let trailActive = false;
 let trailLastX = null, trailLastY = null;
+
+// Articulated trailer state
+let isArticulated = false;
+let trailer = { exists: false, rearX: 0, rearY: -10, hx: 0, hy: 1 };
 
 // Arcs
 let showLeft = true, showRight = true;
@@ -758,7 +843,7 @@ function screenToWorld(sx, sy) {
 function getProps() {
   // UI inputs are in FEET. Physics engine works in METERS internally.
   const FT = 0.3048;
-  return {
+  const props = {
     wheelbase:       (parseFloat(document.getElementById('wheelbase').value)        || 25.0) * FT,
     bus_width:       (parseFloat(document.getElementById('bus_width').value)        || 8.5)  * FT,
     front_overhang:  (parseFloat(document.getElementById('front_overhang').value)   || 8.5)  * FT,
@@ -767,7 +852,15 @@ function getProps() {
     arc_dist:        (parseFloat(document.getElementById('arc_dist').value)         || 100)  * FT,
     trail_min_dist:  (parseFloat(document.getElementById('trail_min_dist').value)   || 1.0)  * FT,
     steer_sens:       parseFloat(document.getElementById('steer_sens').value)       || 0.35,
+    is_articulated:  isArticulated,
   };
+  if (isArticulated) {
+    props.kingpin_setback       = (parseFloat(document.getElementById('kingpin_setback').value)       || 2.0) * FT;
+    props.trailer_wheelbase     = (parseFloat(document.getElementById('trailer_wheelbase').value)     || 37.5) * FT;
+    props.trailer_rear_overhang = (parseFloat(document.getElementById('trailer_rear_overhang').value) || 3.0) * FT;
+    props.trailer_width         = (parseFloat(document.getElementById('trailer_width').value)         || 8.5) * FT;
+  }
+  return props;
 }
 
 function getBusHeading() {
@@ -930,11 +1023,50 @@ function buildArcPath(props, side) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ARTICULATED TRAILER PHYSICS
+// The hitch (fifth wheel / kingpin) is pinned to a fixed point on the tractor.
+// Each frame, the trailer rear axle is constrained to stay exactly
+// trailer_wheelbase meters from the hitch — the trailer swings freely around it.
+// ─────────────────────────────────────────────────────────────────────────────
+function getHitchPos(props) {
+  const { hx, hy } = getBusHeading();
+  return {
+    x: bus.rearX - hx * props.kingpin_setback,
+    y: bus.rearY - hy * props.kingpin_setback,
+  };
+}
+
+function updateTrailer(props) {
+  if (!isArticulated || !trailer.exists) return;
+  const hitch = getHitchPos(props);
+  const dx = hitch.x - trailer.rearX;
+  const dy = hitch.y - trailer.rearY;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 1e-9) return;
+  // Trailer heading = unit vector from rear axle toward hitch
+  trailer.hx = dx / dist;
+  trailer.hy = dy / dist;
+  // Keep rear axle exactly trailer_wheelbase behind hitch
+  trailer.rearX = hitch.x - trailer.hx * props.trailer_wheelbase;
+  trailer.rearY = hitch.y - trailer.hy * props.trailer_wheelbase;
+}
+
+function initTrailer(props) {
+  if (!isArticulated) { trailer.exists = false; return; }
+  const { hx, hy } = getBusHeading();
+  const hitch = getHitchPos(props);
+  trailer.exists = true;
+  trailer.hx = hx;
+  trailer.hy = hy;
+  trailer.rearX = hitch.x - hx * props.trailer_wheelbase;
+  trailer.rearY = hitch.y - hy * props.trailer_wheelbase;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // TRAIL
 // ─────────────────────────────────────────────────────────────────────────────
 function recordTrailStep(props) {
   const { hx, hy } = getBusHeading();
-  const rearPos2dX = bus.rearX, rearPos2dY = bus.rearY;
   const hw = props.bus_width / 2;
   const fo = props.front_overhang;
   const ro = props.rear_overhang;
@@ -943,14 +1075,31 @@ function recordTrailStep(props) {
   const fcX = bus.frontX + hx*fo, fcY = bus.frontY + hy*fo;
   const rcX = bus.rearX  - hx*ro, rcY = bus.rearY  - hy*ro;
 
+  // Capture trailer corners if articulated
+  let trailerEntry = null;
+  if (isArticulated && trailer.exists) {
+    const thx = trailer.hx, thy = trailer.hy;
+    const tpx = -thy, tpy = thx;
+    const thw = props.trailer_width / 2;
+    const tro = props.trailer_rear_overhang;
+    const hitch = getHitchPos(props);
+    trailerEntry = {
+      fl: { x: hitch.x       - tpx * thw,          y: hitch.y       - tpy * thw          },
+      fr: { x: hitch.x       + tpx * thw,          y: hitch.y       + tpy * thw          },
+      rl: { x: trailer.rearX - thx * tro - tpx * thw, y: trailer.rearY - thy * tro - tpy * thw },
+      rr: { x: trailer.rearX - thx * tro + tpx * thw, y: trailer.rearY - thy * tro + tpy * thw },
+    };
+  }
+
   trail.push({
     fl: { x: fcX - rx*hw, y: fcY - ry*hw },
     fr: { x: fcX + rx*hw, y: fcY + ry*hw },
     rl: { x: rcX - rx*hw, y: rcY - ry*hw },
     rr: { x: rcX + rx*hw, y: rcY + ry*hw },
+    trailer: trailerEntry,
   });
-  trailLastX = rearPos2dX;
-  trailLastY = rearPos2dY;
+  trailLastX = bus.rearX;
+  trailLastY = bus.rearY;
 }
 
 function checkTrail(props) {
@@ -982,6 +1131,7 @@ function redraw() {
   if (bgImage) drawBg();
   drawTrail();
   drawArcs();
+  drawTrailer();  // draw before tractor so cab renders on top at coupling point
   drawBus();
   if (scaleMeasuring) drawScalePicks();
   updateHUD();
@@ -1057,10 +1207,34 @@ function drawBg() {
 function drawTrail() {
   if (trail.length < 2) return;
   ctx.save();
+
+  // ── Trailer trail (drawn first so tractor trail appears on top) ──
+  ctx.fillStyle = 'rgba(255,140,0,0.18)';
+  for (let i = 0; i < trail.length - 1; i++) {
+    const a = trail[i], b = trail[i+1];
+    if (!a.trailer || !b.trailer) continue;
+    const afl = worldToScreen(a.trailer.fl.x, a.trailer.fl.y);
+    const afr = worldToScreen(a.trailer.fr.x, a.trailer.fr.y);
+    const arl = worldToScreen(a.trailer.rl.x, a.trailer.rl.y);
+    const arr = worldToScreen(a.trailer.rr.x, a.trailer.rr.y);
+    const bfl = worldToScreen(b.trailer.fl.x, b.trailer.fl.y);
+    const bfr = worldToScreen(b.trailer.fr.x, b.trailer.fr.y);
+    const brl = worldToScreen(b.trailer.rl.x, b.trailer.rl.y);
+    const brr = worldToScreen(b.trailer.rr.x, b.trailer.rr.y);
+    ctx.beginPath();
+    ctx.moveTo(afl.x, afl.y); ctx.lineTo(bfl.x, bfl.y);
+    ctx.lineTo(brl.x, brl.y); ctx.lineTo(arl.x, arl.y);
+    ctx.closePath(); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(afr.x, afr.y); ctx.lineTo(bfr.x, bfr.y);
+    ctx.lineTo(brr.x, brr.y); ctx.lineTo(arr.x, arr.y);
+    ctx.closePath(); ctx.fill();
+  }
+
+  // ── Tractor / bus trail ──
   ctx.fillStyle   = 'rgba(255,70,30,0.28)';
   ctx.strokeStyle = 'rgba(255,90,40,0.7)';
   ctx.lineWidth   = 0.5;
-
   for (let i = 0; i < trail.length - 1; i++) {
     const a = trail[i], b = trail[i+1];
     const afl = worldToScreen(a.fl.x, a.fl.y);
@@ -1203,6 +1377,67 @@ function drawBus() {
   ctx.restore();
 }
 
+function drawTrailer() {
+  const props = getProps();
+  if (!isArticulated || !trailer.exists) return;
+
+  const thx = trailer.hx, thy = trailer.hy;
+  const tpx = -thy, tpy = thx;          // trailer right perpendicular (avoiding 'try' keyword)
+  const hw  = props.trailer_width / 2;
+  const ro  = props.trailer_rear_overhang;
+  const hitch = getHitchPos(props);
+
+  // Trailer body corners: front = hitch, rear = rearX - thx*ro
+  const fl = worldToScreen(hitch.x       - tpx * hw,            hitch.y       - tpy * hw           );
+  const fr = worldToScreen(hitch.x       + tpx * hw,            hitch.y       + tpy * hw           );
+  const bl = worldToScreen(trailer.rearX - thx * ro - tpx * hw, trailer.rearY - thy * ro - tpy * hw);
+  const br = worldToScreen(trailer.rearX - thx * ro + tpx * hw, trailer.rearY - thy * ro + tpy * hw);
+
+  ctx.save();
+
+  // Trailer body fill + outline
+  ctx.beginPath();
+  ctx.moveTo(bl.x, bl.y);
+  ctx.lineTo(br.x, br.y);
+  ctx.lineTo(fr.x, fr.y);
+  ctx.lineTo(fl.x, fl.y);
+  ctx.closePath();
+  ctx.fillStyle   = 'rgba(200,120,0,0.28)';
+  ctx.fill();
+  ctx.strokeStyle = '#c87800';
+  ctx.lineWidth   = 1.5;
+  ctx.stroke();
+
+  // Rear bumper line
+  const rearL = worldToScreen(trailer.rearX - tpx * hw, trailer.rearY - tpy * hw);
+  const rearR = worldToScreen(trailer.rearX + tpx * hw, trailer.rearY + tpy * hw);
+  ctx.strokeStyle = '#ff9900';
+  ctx.lineWidth   = 2;
+  ctx.beginPath();
+  ctx.moveTo(rearL.x, rearL.y);
+  ctx.lineTo(rearR.x, rearR.y);
+  ctx.stroke();
+
+  // Kingpin / fifth-wheel coupling dot
+  const hitchS = worldToScreen(hitch.x, hitch.y);
+  ctx.beginPath();
+  ctx.arc(hitchS.x, hitchS.y, 5, 0, Math.PI * 2);
+  ctx.fillStyle   = '#ffcc44';
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth   = 1.5;
+  ctx.fill();
+  ctx.stroke();
+
+  // Trailer rear axle dot
+  const rearS = worldToScreen(trailer.rearX, trailer.rearY);
+  ctx.beginPath();
+  ctx.arc(rearS.x, rearS.y, 4, 0, Math.PI * 2);
+  ctx.fillStyle = '#c87800';
+  ctx.fill();
+
+  ctx.restore();
+}
+
 function drawScalePicks() {
   ctx.save();
   scalePickPoints.forEach((p, i) => {
@@ -1334,6 +1569,7 @@ function onMouseMove(e) {
     snapRear(props);
   }
 
+  updateTrailer(props);  // keep trailer aligned to new tractor position
   checkTrail(props);
 }
 
@@ -1394,13 +1630,28 @@ function applyPreset() {
   document.getElementById('front_overhang').value = (d.front_overhang * M2FT).toFixed(1);
   document.getElementById('rear_overhang').value  = (d.rear_overhang  * M2FT).toFixed(1);
   document.getElementById('min_turn_radius').value= (d.min_turn_radius* M2FT).toFixed(1);
+
+  // Handle articulated trailer
+  isArticulated = !!d.is_articulated;
+  const cb = document.getElementById('articulated-enabled');
+  cb.checked = isArticulated;
+  document.getElementById('trailer-fields').style.display  = isArticulated ? '' : 'none';
+  document.getElementById('trailer-hint').style.display    = isArticulated ? 'none' : '';
+  if (isArticulated) {
+    document.getElementById('kingpin_setback').value       = (d.kingpin_setback       * M2FT).toFixed(1);
+    document.getElementById('trailer_wheelbase').value     = (d.trailer_wheelbase     * M2FT).toFixed(1);
+    document.getElementById('trailer_rear_overhang').value = (d.trailer_rear_overhang * M2FT).toFixed(1);
+    document.getElementById('trailer_width').value         = (d.trailer_width         * M2FT).toFixed(1);
+    document.getElementById('sec-trailer').classList.remove('collapsed');
+  }
+
   onDimChange();
   resetBus();
 }
 
 function onDimChange() {
   document.getElementById('preset-select').value = 'CUSTOM';
-  // Total length in feet (all inputs are in ft)
+  // Total tractor/bus length in feet (all inputs are in ft)
   const wb  = parseFloat(document.getElementById('wheelbase').value) || 0;
   const fo  = parseFloat(document.getElementById('front_overhang').value) || 0;
   const ro  = parseFloat(document.getElementById('rear_overhang').value) || 0;
@@ -1409,9 +1660,27 @@ function onDimChange() {
     `${totalFt.toFixed(1)} ft  (${(totalFt*0.3048).toFixed(2)} m)`;
   const arcFt = parseFloat(document.getElementById('arc_dist').value) || 100;
   document.getElementById('arc-dist-label').textContent = arcFt + ' ft';
+
+  // Trailer body length (from kingpin to rear bumper)
+  if (isArticulated) {
+    const kp  = parseFloat(document.getElementById('kingpin_setback').value) || 0;
+    const twb = parseFloat(document.getElementById('trailer_wheelbase').value) || 0;
+    const tro = parseFloat(document.getElementById('trailer_rear_overhang').value) || 0;
+    const trailerFt = twb + tro;  // visible body length behind hitch
+    document.getElementById('trailer-length-display').textContent =
+      `${trailerFt.toFixed(1)} ft  (${(trailerFt*0.3048).toFixed(2)} m)`;
+  }
 }
 
 function updateDerivedLabels() { onDimChange(); }
+
+function onArticulatedToggle() {
+  isArticulated = document.getElementById('articulated-enabled').checked;
+  document.getElementById('trailer-fields').style.display = isArticulated ? '' : 'none';
+  document.getElementById('trailer-hint').style.display   = isArticulated ? 'none' : '';
+  onDimChange();
+  resetBus();
+}
 
 function setDriveMode(mode) {
   driveMode = mode;
@@ -1481,6 +1750,7 @@ function resetBus() {
   bus.rearX  = 0; bus.rearY  = 0;
   bus.frontX = 0; bus.frontY = props.wheelbase;
   steerSmoothAngle = 0;
+  initTrailer(props);  // place trailer in a straight line behind the tractor
 }
 
 function resetView() {
