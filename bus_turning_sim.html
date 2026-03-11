@@ -617,12 +617,27 @@
       Min Turning Radius <span class="arrow">▼</span>
     </div>
     <div class="section-body">
+      <label style="display:flex;align-items:center;gap:7px;cursor:pointer;margin-bottom:8px;font-size:12px">
+        <input type="checkbox" id="use_steer_input" checked onchange="onDimChange()">
+        Drive turn limit from max wheel-cut angle
+      </label>
+      <div class="field">
+        <label>Max Wheel-Cut Angle (deg)</label>
+        <div class="num-with-unit">
+          <input type="number" id="max_steer_deg" value="32" min="5" max="55" step="0.5" oninput="onDimChange()">
+          <span class="unit-label">°</span>
+        </div>
+      </div>
       <div class="field">
         <label>Rear Axle Radius (ft)</label>
         <div class="num-with-unit">
           <input type="number" id="min_turn_radius" value="38.0" min="3" max="164" step="0.5" oninput="onDimChange()">
           <span class="unit-label">ft</span>
         </div>
+      </div>
+      <div class="derived-value">
+        <span>Effective Rear-Axle Radius</span>
+        <span id="effective-radius-display">—</span>
       </div>
       <div class="field">
         <label>Arc Preview Distance (ft)</label>
@@ -931,6 +946,7 @@ let scaleMeasuring = false;
 let savedPosition = null; // { rearX, rearY, frontX, frontY, trailer: {...} | null }
 
 let articulationCache = { key: '', maxDeg: null };
+let autoArcSide = 0; // -1 right, +1 left, 0 straight
 
 // Tool mode
 let activeTool = 'select';
@@ -994,7 +1010,7 @@ function getProps() {
     bus_width:       (parseFloat(document.getElementById('bus_width').value)        || 8.5)  * FT,
     front_overhang:  (parseFloat(document.getElementById('front_overhang').value)   || 8.5)  * FT,
     rear_overhang:   (parseFloat(document.getElementById('rear_overhang').value)    || 7.0)  * FT,
-    min_turn_radius: (parseFloat(document.getElementById('min_turn_radius').value)  || 38.0) * FT,
+    min_turn_radius: (computeEffectiveTurnRadiusFt() || 38.0) * FT,
     arc_dist:        (parseFloat(document.getElementById('arc_dist').value)         || 100)  * FT,
     trail_min_dist:  (parseFloat(document.getElementById('trail_min_dist').value)   || 1.0)  * FT,
     steer_sens:       parseFloat(document.getElementById('steer_sens').value)       || 0.35,
@@ -1067,9 +1083,25 @@ function constrainFront(props, targetX, targetY) {
     const { px: rx, py: ry } = perpRight(hx, hy);
     const relX = targetX - bus.rearX, relY = targetY - bus.rearY;
     const lateral = relX*rx + relY*ry;
-    const deadband = Math.max(R * 0.04, 0.08);
-    if (Math.abs(lateral) <= deadband) return straightSnap();
-    return arcSnap(lateral < 0 ? +1 : -1);
+    const holdBand = Math.max(R * 0.06, 0.16);
+    const switchBand = Math.max(R * 0.14, 0.45);
+
+    if (autoArcSide === 0) {
+      if (Math.abs(lateral) <= holdBand) return straightSnap();
+      autoArcSide = lateral < 0 ? +1 : -1;
+    } else {
+      const targetSide = lateral < 0 ? +1 : -1;
+      if (Math.abs(lateral) < holdBand * 0.75) {
+        autoArcSide = 0;
+        return straightSnap();
+      }
+      if (targetSide !== autoArcSide && Math.abs(lateral) > switchBand) {
+        autoArcSide = targetSide;
+      }
+    }
+
+    if (autoArcSide === 0) return straightSnap();
+    return arcSnap(autoArcSide);
   }
 
   // FREE or STEER: handled elsewhere
@@ -1875,6 +1907,7 @@ function onMouseDown(e) {
       bus.dragging = true;
       bus.dragTarget = 'front';
       steerSmoothAngle = 0;
+      autoArcSide = 0;
       canvas.style.cursor = 'grabbing';
     }
   }
@@ -1974,6 +2007,10 @@ function applyPreset() {
   document.getElementById('front_overhang').value = (d.front_overhang * M2FT).toFixed(1);
   document.getElementById('rear_overhang').value  = (d.rear_overhang  * M2FT).toFixed(1);
   document.getElementById('min_turn_radius').value= (d.min_turn_radius* M2FT).toFixed(1);
+  const wbFt = d.wheelbase * M2FT;
+  const rFt = d.min_turn_radius * M2FT;
+  const inferred = Math.atan(wbFt / Math.max(rFt, 0.01)) * 180 / Math.PI;
+  document.getElementById('max_steer_deg').value = inferred.toFixed(1);
 
   // Handle articulated trailer
   isArticulated = !!d.is_articulated;
@@ -2006,6 +2043,15 @@ function onDimChange() {
   const arcFt = parseFloat(document.getElementById('arc_dist').value) || 100;
   document.getElementById('arc-dist-label').textContent = arcFt + ' ft';
 
+  const radiusInput = document.getElementById('min_turn_radius');
+  const useSteer = document.getElementById('use_steer_input').checked;
+  radiusInput.disabled = useSteer;
+  radiusInput.style.opacity = useSteer ? '0.55' : '1';
+  const effFt = computeEffectiveTurnRadiusFt();
+  const wbFt = parseFloat(document.getElementById('wheelbase').value) || 0;
+  const effDeg = Math.atan(wbFt / Math.max(effFt, 0.01)) * 180 / Math.PI;
+  document.getElementById('effective-radius-display').textContent = `${effFt.toFixed(1)} ft  (${effDeg.toFixed(1)}°)`;
+
   // Trailer body length (nose overhang + wheelbase + rear overhang)
   if (isArticulated) {
     const twb = parseFloat(document.getElementById('trailer_wheelbase').value) || 0;
@@ -2015,6 +2061,17 @@ function onDimChange() {
     document.getElementById('trailer-length-display').textContent =
       `${trailerFt.toFixed(1)} ft  (${(trailerFt*0.3048).toFixed(2)} m)`;
   }
+}
+
+function computeEffectiveTurnRadiusFt() {
+  const wbFt = parseFloat(document.getElementById('wheelbase').value) || 25;
+  const useSteer = document.getElementById('use_steer_input').checked;
+  if (useSteer) {
+    const deg = parseFloat(document.getElementById('max_steer_deg').value) || 32;
+    const rad = deg * Math.PI / 180;
+    return wbFt / Math.max(Math.tan(rad), 0.02);
+  }
+  return parseFloat(document.getElementById('min_turn_radius').value) || 38;
 }
 
 function updateDerivedLabels() { onDimChange(); }
@@ -2030,6 +2087,7 @@ function onArticulatedToggle() {
 function setDriveMode(mode) {
   driveMode = mode;
   steerSmoothAngle = 0;
+  autoArcSide = 0;
   document.querySelectorAll('.radio-dot').forEach(d => d.classList.remove('on'));
   document.getElementById('radio-' + mode).classList.add('on');
   document.getElementById('steer-sensitivity-row').style.display =
@@ -2095,6 +2153,7 @@ function resetBus() {
   bus.rearX  = 0; bus.rearY  = 0;
   bus.frontX = 0; bus.frontY = props.wheelbase;
   steerSmoothAngle = 0;
+  autoArcSide = 0;
   initTrailer(props);  // place trailer in a straight line behind the tractor
 }
 
@@ -2319,6 +2378,7 @@ function loadPosition() {
   bus.rearX  = savedPosition.rearX;  bus.rearY  = savedPosition.rearY;
   bus.frontX = savedPosition.frontX; bus.frontY = savedPosition.frontY;
   steerSmoothAngle = 0;
+  autoArcSide = 0;
   if (savedPosition.trailer && isArticulated && trailer.exists) {
     trailer.rearX = savedPosition.trailer.rearX;
     trailer.rearY = savedPosition.trailer.rearY;
@@ -2346,6 +2406,7 @@ function orientVehicle(hx, hy) {
   bus.frontX = bus.rearX + hx * props.wheelbase;
   bus.frontY = bus.rearY + hy * props.wheelbase;
   steerSmoothAngle = 0;
+  autoArcSide = 0;
   if (isArticulated && trailer.exists) {
     // Straighten trailer so it's inline with the tractor
     trailer.hx = hx;
