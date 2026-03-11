@@ -596,8 +596,16 @@
           <span>Trailer Body Length</span>
           <span id="trailer-length-display">—</span>
         </div>
+        <div class="derived-value">
+          <span>Estimated Cab/Trailer Limit</span>
+          <span id="artic-limit-display">—</span>
+        </div>
+        <div class="derived-value">
+          <span>Live Cab Clearance</span>
+          <span id="cab-clearance-display">—</span>
+        </div>
         <div class="info-box accent" style="margin-top:4px">
-          Trailer follows the hitch realistically — rear axle sweeps a tighter arc than the cab on turns.
+          Trailer follows the hitch realistically — rear axle sweeps a tighter arc than the cab on turns. A highlighted line at the back of cab turns red if the trailer nose intersects it.
         </div>
       </div>
     </div>
@@ -609,12 +617,27 @@
       Min Turning Radius <span class="arrow">▼</span>
     </div>
     <div class="section-body">
+      <label style="display:flex;align-items:center;gap:7px;cursor:pointer;margin-bottom:8px;font-size:12px">
+        <input type="checkbox" id="use_steer_input" checked onchange="onDimChange()">
+        Drive turn limit from max wheel-cut angle
+      </label>
+      <div class="field">
+        <label>Max Wheel-Cut Angle (deg)</label>
+        <div class="num-with-unit">
+          <input type="number" id="max_steer_deg" value="32" min="5" max="55" step="0.5" oninput="onDimChange()">
+          <span class="unit-label">°</span>
+        </div>
+      </div>
       <div class="field">
         <label>Rear Axle Radius (ft)</label>
         <div class="num-with-unit">
           <input type="number" id="min_turn_radius" value="38.0" min="3" max="164" step="0.5" oninput="onDimChange()">
           <span class="unit-label">ft</span>
         </div>
+      </div>
+      <div class="derived-value">
+        <span>Effective Rear-Axle Radius</span>
+        <span id="effective-radius-display">—</span>
       </div>
       <div class="field">
         <label>Arc Preview Distance (ft)</label>
@@ -922,6 +945,9 @@ let scaleMeasuring = false;
 // Saved position snapshot (for quick re-run from same spot)
 let savedPosition = null; // { rearX, rearY, frontX, frontY, trailer: {...} | null }
 
+let articulationCache = { key: '', maxDeg: null };
+let autoArcSide = 0; // -1 right, +1 left, 0 straight
+
 // Tool mode
 let activeTool = 'select';
 
@@ -984,7 +1010,7 @@ function getProps() {
     bus_width:       (parseFloat(document.getElementById('bus_width').value)        || 8.5)  * FT,
     front_overhang:  (parseFloat(document.getElementById('front_overhang').value)   || 8.5)  * FT,
     rear_overhang:   (parseFloat(document.getElementById('rear_overhang').value)    || 7.0)  * FT,
-    min_turn_radius: (parseFloat(document.getElementById('min_turn_radius').value)  || 38.0) * FT,
+    min_turn_radius: (computeEffectiveTurnRadiusFt() || 38.0) * FT,
     arc_dist:        (parseFloat(document.getElementById('arc_dist').value)         || 100)  * FT,
     trail_min_dist:  (parseFloat(document.getElementById('trail_min_dist').value)   || 1.0)  * FT,
     steer_sens:       parseFloat(document.getElementById('steer_sens').value)       || 0.35,
@@ -1057,9 +1083,25 @@ function constrainFront(props, targetX, targetY) {
     const { px: rx, py: ry } = perpRight(hx, hy);
     const relX = targetX - bus.rearX, relY = targetY - bus.rearY;
     const lateral = relX*rx + relY*ry;
-    const deadband = Math.max(R * 0.04, 0.08);
-    if (Math.abs(lateral) <= deadband) return straightSnap();
-    return arcSnap(lateral < 0 ? +1 : -1);
+    const holdBand = Math.max(R * 0.06, 0.16);
+    const switchBand = Math.max(R * 0.14, 0.45);
+
+    if (autoArcSide === 0) {
+      if (Math.abs(lateral) <= holdBand) return straightSnap();
+      autoArcSide = lateral < 0 ? +1 : -1;
+    } else {
+      const targetSide = lateral < 0 ? +1 : -1;
+      if (Math.abs(lateral) < holdBand * 0.75) {
+        autoArcSide = 0;
+        return straightSnap();
+      }
+      if (targetSide !== autoArcSide && Math.abs(lateral) > switchBand) {
+        autoArcSide = targetSide;
+      }
+    }
+
+    if (autoArcSide === 0) return straightSnap();
+    return arcSnap(autoArcSide);
   }
 
   // FREE or STEER: handled elsewhere
@@ -1486,7 +1528,7 @@ function drawBus() {
   // zone that allows the trailer to swing without hitting the cab corners.
   // Chamfer size is bounded so it stays visually meaningful.
   const c = props.is_articulated
-    ? Math.min(hw * 0.22, ro * 0.5)   // ~0.28 m on a standard semi
+    ? Math.min(hw * 0.36, ro * 0.85)
     : 0;
 
   // World-space corner positions (before chamfering)
@@ -1527,6 +1569,19 @@ function drawBus() {
   ctx.strokeStyle = '#4a9eff';
   ctx.lineWidth   = 1.5;
   ctx.stroke();
+
+  if (props.is_articulated) {
+    const cabBack = getCabBackLine(props, hx, hy, c);
+    const clearance = getCabTrailerClearance(props, cabBack);
+    const cabL = worldToScreen(cabBack.left.x, cabBack.left.y);
+    const cabR = worldToScreen(cabBack.right.x, cabBack.right.y);
+    ctx.strokeStyle = clearance.intersects ? '#ff6b35' : '#7fe7ff';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(cabL.x, cabL.y);
+    ctx.lineTo(cabR.x, cabR.y);
+    ctx.stroke();
+  }
 
   // Front indicator line
   const frontL = worldToScreen(bus.frontX - rx*hw, bus.frontY - ry*hw);
@@ -1590,15 +1645,29 @@ function drawTrailer() {
   const fr = worldToScreen(noseFrontX    + tpx * hw,            noseFrontY    + tpy * hw           );
   const bl = worldToScreen(trailer.rearX - thx * ro - tpx * hw, trailer.rearY - thy * ro - tpy * hw);
   const br = worldToScreen(trailer.rearX - thx * ro + tpx * hw, trailer.rearY - thy * ro + tpy * hw);
+  const noseCut = Math.min(hw * 0.24, tno * 0.75);
 
   ctx.save();
 
   // Trailer body fill + outline
   ctx.beginPath();
-  ctx.moveTo(bl.x, bl.y);
-  ctx.lineTo(br.x, br.y);
-  ctx.lineTo(fr.x, fr.y);
-  ctx.lineTo(fl.x, fl.y);
+  if (noseCut > 0.01) {
+    const flCut = worldToScreen(noseFrontX - tpx * (hw - noseCut), noseFrontY - tpy * (hw - noseCut));
+    const frCut = worldToScreen(noseFrontX + tpx * (hw - noseCut), noseFrontY + tpy * (hw - noseCut));
+    const leftNose = worldToScreen(noseFrontX - thx * noseCut - tpx * hw, noseFrontY - thy * noseCut - tpy * hw);
+    const rightNose = worldToScreen(noseFrontX - thx * noseCut + tpx * hw, noseFrontY - thy * noseCut + tpy * hw);
+    ctx.moveTo(bl.x, bl.y);
+    ctx.lineTo(br.x, br.y);
+    ctx.lineTo(rightNose.x, rightNose.y);
+    ctx.lineTo(frCut.x, frCut.y);
+    ctx.lineTo(flCut.x, flCut.y);
+    ctx.lineTo(leftNose.x, leftNose.y);
+  } else {
+    ctx.moveTo(bl.x, bl.y);
+    ctx.lineTo(br.x, br.y);
+    ctx.lineTo(fr.x, fr.y);
+    ctx.lineTo(fl.x, fl.y);
+  }
   ctx.closePath();
   ctx.fillStyle   = 'rgba(200,120,0,0.28)';
   ctx.fill();
@@ -1680,6 +1749,115 @@ function updateHUD() {
   const modeNames = { FREE:'Free Drag', AUTO:'Auto Constrained', LEFT:'Constrained Left',
                        RIGHT:'Constrained Right', STRAIGHT:'Constrained Straight', STEER:'Steering Pad' };
   document.getElementById('hud-mode').textContent = `Mode: ${modeNames[driveMode]}`;
+  updateArticulationDisplays(props);
+}
+
+function getCabBackLine(props, hx, hy, c) {
+  const rx = -hy, ry = hx;
+  const hw = props.bus_width / 2;
+  const ro = props.rear_overhang;
+  const blX = bus.rearX - hx * ro - rx * hw;
+  const blY = bus.rearY - hy * ro - ry * hw;
+  const brX = bus.rearX - hx * ro + rx * hw;
+  const brY = bus.rearY - hy * ro + ry * hw;
+  return {
+    left: { x: blX + rx * c, y: blY + ry * c },
+    right: { x: brX - rx * c, y: brY - ry * c },
+  };
+}
+
+function buildTrailerCorners(props, thx, thy, hitch) {
+  const tpx = -thy, tpy = thx;
+  const hw = props.trailer_width / 2;
+  const ro = props.trailer_rear_overhang;
+  const tno = props.trailer_nose_overhang || 0;
+  const noseFrontX = hitch.x + thx * tno;
+  const noseFrontY = hitch.y + thy * tno;
+  return [
+    { x: noseFrontX - tpx * hw, y: noseFrontY - tpy * hw },
+    { x: noseFrontX + tpx * hw, y: noseFrontY + tpy * hw },
+    { x: trailer.rearX - thx * ro + tpx * hw, y: trailer.rearY - thy * ro + tpy * hw },
+    { x: trailer.rearX - thx * ro - tpx * hw, y: trailer.rearY - thy * ro - tpy * hw },
+  ];
+}
+
+function segIntersects(a, b, c, d) {
+  const o = (p, q, r) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+  const o1 = o(a, b, c), o2 = o(a, b, d), o3 = o(c, d, a), o4 = o(c, d, b);
+  return ((o1 > 0) !== (o2 > 0)) && ((o3 > 0) !== (o4 > 0));
+}
+
+function pointSegDist(p, a, b) {
+  const abx = b.x - a.x, aby = b.y - a.y;
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * abx + (p.y - a.y) * aby) / (abx * abx + aby * aby + 1e-12)));
+  const x = a.x + t * abx, y = a.y + t * aby;
+  return Math.hypot(p.x - x, p.y - y);
+}
+
+function getCabTrailerClearance(props, cabBack) {
+  if (!isArticulated || !trailer.exists) return { intersects: false, minDist: Infinity };
+  const hitch = getHitchPos(props);
+  const poly = buildTrailerCorners(props, trailer.hx, trailer.hy, hitch);
+  let intersects = false;
+  let minDist = Infinity;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    if (segIntersects(cabBack.left, cabBack.right, a, b)) intersects = true;
+    minDist = Math.min(minDist, pointSegDist(cabBack.left, a, b), pointSegDist(cabBack.right, a, b));
+    minDist = Math.min(minDist, pointSegDist(a, cabBack.left, cabBack.right), pointSegDist(b, cabBack.left, cabBack.right));
+  }
+  return { intersects, minDist };
+}
+
+function estimateArticulationLimit(props) {
+  if (!props.is_articulated) return null;
+  const key = [props.bus_width, props.rear_overhang, props.kingpin_setback, props.trailer_width, props.trailer_nose_overhang]
+    .map(v => v.toFixed(4)).join('|');
+  if (articulationCache.key === key) return articulationCache.maxDeg;
+
+  const hw = props.bus_width / 2;
+  const ro = props.rear_overhang;
+  const c = Math.min(hw * 0.36, ro * 0.85);
+  const cabBack = {
+    left: { x: -ro + 0, y: -hw + c },
+    right: { x: -ro + 0, y: hw - c },
+  };
+  const hitch = { x: -props.kingpin_setback, y: 0 };
+  let limit = 89;
+  for (let deg = 1; deg <= 89; deg += 0.25) {
+    const t = deg * Math.PI / 180;
+    const thx = Math.cos(t), thy = Math.sin(t);
+    const tpx = -thy, tpy = thx;
+    const tw = props.trailer_width / 2;
+    const tno = props.trailer_nose_overhang || 0;
+    const nose = { x: hitch.x + thx * tno, y: hitch.y + thy * tno };
+    const tr = [
+      { x: nose.x - tpx * tw, y: nose.y - tpy * tw },
+      { x: nose.x + tpx * tw, y: nose.y + tpy * tw },
+    ];
+    if (segIntersects(cabBack.left, cabBack.right, tr[0], tr[1])) { limit = deg; break; }
+  }
+  articulationCache = { key, maxDeg: limit };
+  return limit;
+}
+
+function updateArticulationDisplays(props) {
+  const limitEl = document.getElementById('artic-limit-display');
+  const clearEl = document.getElementById('cab-clearance-display');
+  if (!props.is_articulated || !trailer.exists) {
+    limitEl.textContent = '—';
+    clearEl.textContent = '—';
+    return;
+  }
+  const { hx, hy } = getBusHeading();
+  const c = Math.min((props.bus_width / 2) * 0.36, props.rear_overhang * 0.85);
+  const cabBack = getCabBackLine(props, hx, hy, c);
+  const clearance = getCabTrailerClearance(props, cabBack);
+  const dot = Math.max(-1, Math.min(1, hx * trailer.hx + hy * trailer.hy));
+  const ang = Math.acos(dot) * 180 / Math.PI;
+  const limit = estimateArticulationLimit(props);
+  limitEl.textContent = `${ang.toFixed(1)}° / ~${limit.toFixed(1)}°`;
+  clearEl.textContent = clearance.intersects ? 'CONTACT' : `${(clearance.minDist * 3.28084).toFixed(2)} ft`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1729,6 +1907,7 @@ function onMouseDown(e) {
       bus.dragging = true;
       bus.dragTarget = 'front';
       steerSmoothAngle = 0;
+      autoArcSide = 0;
       canvas.style.cursor = 'grabbing';
     }
   }
@@ -1828,6 +2007,10 @@ function applyPreset() {
   document.getElementById('front_overhang').value = (d.front_overhang * M2FT).toFixed(1);
   document.getElementById('rear_overhang').value  = (d.rear_overhang  * M2FT).toFixed(1);
   document.getElementById('min_turn_radius').value= (d.min_turn_radius* M2FT).toFixed(1);
+  const wbFt = d.wheelbase * M2FT;
+  const rFt = d.min_turn_radius * M2FT;
+  const inferred = Math.atan(wbFt / Math.max(rFt, 0.01)) * 180 / Math.PI;
+  document.getElementById('max_steer_deg').value = inferred.toFixed(1);
 
   // Handle articulated trailer
   isArticulated = !!d.is_articulated;
@@ -1860,6 +2043,15 @@ function onDimChange() {
   const arcFt = parseFloat(document.getElementById('arc_dist').value) || 100;
   document.getElementById('arc-dist-label').textContent = arcFt + ' ft';
 
+  const radiusInput = document.getElementById('min_turn_radius');
+  const useSteer = document.getElementById('use_steer_input').checked;
+  radiusInput.disabled = useSteer;
+  radiusInput.style.opacity = useSteer ? '0.55' : '1';
+  const effFt = computeEffectiveTurnRadiusFt();
+  const wbFt = parseFloat(document.getElementById('wheelbase').value) || 0;
+  const effDeg = Math.atan(wbFt / Math.max(effFt, 0.01)) * 180 / Math.PI;
+  document.getElementById('effective-radius-display').textContent = `${effFt.toFixed(1)} ft  (${effDeg.toFixed(1)}°)`;
+
   // Trailer body length (nose overhang + wheelbase + rear overhang)
   if (isArticulated) {
     const twb = parseFloat(document.getElementById('trailer_wheelbase').value) || 0;
@@ -1869,6 +2061,17 @@ function onDimChange() {
     document.getElementById('trailer-length-display').textContent =
       `${trailerFt.toFixed(1)} ft  (${(trailerFt*0.3048).toFixed(2)} m)`;
   }
+}
+
+function computeEffectiveTurnRadiusFt() {
+  const wbFt = parseFloat(document.getElementById('wheelbase').value) || 25;
+  const useSteer = document.getElementById('use_steer_input').checked;
+  if (useSteer) {
+    const deg = parseFloat(document.getElementById('max_steer_deg').value) || 32;
+    const rad = deg * Math.PI / 180;
+    return wbFt / Math.max(Math.tan(rad), 0.02);
+  }
+  return parseFloat(document.getElementById('min_turn_radius').value) || 38;
 }
 
 function updateDerivedLabels() { onDimChange(); }
@@ -1884,6 +2087,7 @@ function onArticulatedToggle() {
 function setDriveMode(mode) {
   driveMode = mode;
   steerSmoothAngle = 0;
+  autoArcSide = 0;
   document.querySelectorAll('.radio-dot').forEach(d => d.classList.remove('on'));
   document.getElementById('radio-' + mode).classList.add('on');
   document.getElementById('steer-sensitivity-row').style.display =
@@ -1949,6 +2153,7 @@ function resetBus() {
   bus.rearX  = 0; bus.rearY  = 0;
   bus.frontX = 0; bus.frontY = props.wheelbase;
   steerSmoothAngle = 0;
+  autoArcSide = 0;
   initTrailer(props);  // place trailer in a straight line behind the tractor
 }
 
@@ -2173,6 +2378,7 @@ function loadPosition() {
   bus.rearX  = savedPosition.rearX;  bus.rearY  = savedPosition.rearY;
   bus.frontX = savedPosition.frontX; bus.frontY = savedPosition.frontY;
   steerSmoothAngle = 0;
+  autoArcSide = 0;
   if (savedPosition.trailer && isArticulated && trailer.exists) {
     trailer.rearX = savedPosition.trailer.rearX;
     trailer.rearY = savedPosition.trailer.rearY;
@@ -2200,6 +2406,7 @@ function orientVehicle(hx, hy) {
   bus.frontX = bus.rearX + hx * props.wheelbase;
   bus.frontY = bus.rearY + hy * props.wheelbase;
   steerSmoothAngle = 0;
+  autoArcSide = 0;
   if (isArticulated && trailer.exists) {
     // Straighten trailer so it's inline with the tractor
     trailer.hx = hx;
