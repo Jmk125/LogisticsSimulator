@@ -947,6 +947,16 @@ let savedPosition = null; // { rearX, rearY, frontX, frontY, trailer: {...} | nu
 
 let articulationCache = { key: '', maxDeg: null };
 let autoArcSide = 0; // -1 right, +1 left, 0 straight
+let autoLateralFiltered = 0;
+let autoSwitchCandidate = 0;
+let autoSwitchFrames = 0;
+
+function resetAutoSteerState() {
+  autoArcSide = 0;
+  autoLateralFiltered = 0;
+  autoSwitchCandidate = 0;
+  autoSwitchFrames = 0;
+}
 
 // Tool mode
 let activeTool = 'select';
@@ -1082,9 +1092,11 @@ function constrainFront(props, targetX, targetY) {
   if (driveMode === 'AUTO') {
     const { px: rx, py: ry } = perpRight(hx, hy);
     const relX = targetX - bus.rearX, relY = targetY - bus.rearY;
-    const lateral = relX*rx + relY*ry;
+    const rawLateral = relX*rx + relY*ry;
+    autoLateralFiltered += (rawLateral - autoLateralFiltered) * 0.30;
+    const lateral = autoLateralFiltered;
     const holdBand = Math.max(R * 0.06, 0.16);
-    const switchBand = Math.max(R * 0.14, 0.45);
+    const switchBand = Math.max(R * 0.16, 0.55);
 
     if (autoArcSide === 0) {
       if (Math.abs(lateral) <= holdBand) return straightSnap();
@@ -1092,11 +1104,24 @@ function constrainFront(props, targetX, targetY) {
     } else {
       const targetSide = lateral < 0 ? +1 : -1;
       if (Math.abs(lateral) < holdBand * 0.75) {
-        autoArcSide = 0;
+        resetAutoSteerState();
         return straightSnap();
       }
       if (targetSide !== autoArcSide && Math.abs(lateral) > switchBand) {
-        autoArcSide = targetSide;
+        if (autoSwitchCandidate !== targetSide) {
+          autoSwitchCandidate = targetSide;
+          autoSwitchFrames = 1;
+        } else {
+          autoSwitchFrames++;
+        }
+        if (autoSwitchFrames >= 3) {
+          autoArcSide = targetSide;
+          autoSwitchCandidate = 0;
+          autoSwitchFrames = 0;
+        }
+      } else {
+        autoSwitchCandidate = 0;
+        autoSwitchFrames = 0;
       }
     }
 
@@ -1907,7 +1932,7 @@ function onMouseDown(e) {
       bus.dragging = true;
       bus.dragTarget = 'front';
       steerSmoothAngle = 0;
-      autoArcSide = 0;
+      resetAutoSteerState();
       canvas.style.cursor = 'grabbing';
     }
   }
@@ -2087,7 +2112,7 @@ function onArticulatedToggle() {
 function setDriveMode(mode) {
   driveMode = mode;
   steerSmoothAngle = 0;
-  autoArcSide = 0;
+  resetAutoSteerState();
   document.querySelectorAll('.radio-dot').forEach(d => d.classList.remove('on'));
   document.getElementById('radio-' + mode).classList.add('on');
   document.getElementById('steer-sensitivity-row').style.display =
@@ -2153,7 +2178,7 @@ function resetBus() {
   bus.rearX  = 0; bus.rearY  = 0;
   bus.frontX = 0; bus.frontY = props.wheelbase;
   steerSmoothAngle = 0;
-  autoArcSide = 0;
+  resetAutoSteerState();
   initTrailer(props);  // place trailer in a straight line behind the tractor
 }
 
@@ -2378,7 +2403,7 @@ function loadPosition() {
   bus.rearX  = savedPosition.rearX;  bus.rearY  = savedPosition.rearY;
   bus.frontX = savedPosition.frontX; bus.frontY = savedPosition.frontY;
   steerSmoothAngle = 0;
-  autoArcSide = 0;
+  resetAutoSteerState();
   if (savedPosition.trailer && isArticulated && trailer.exists) {
     trailer.rearX = savedPosition.trailer.rearX;
     trailer.rearY = savedPosition.trailer.rearY;
@@ -2406,7 +2431,7 @@ function orientVehicle(hx, hy) {
   bus.frontX = bus.rearX + hx * props.wheelbase;
   bus.frontY = bus.rearY + hy * props.wheelbase;
   steerSmoothAngle = 0;
-  autoArcSide = 0;
+  resetAutoSteerState();
   if (isArticulated && trailer.exists) {
     // Straighten trailer so it's inline with the tractor
     trailer.hx = hx;
