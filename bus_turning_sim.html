@@ -700,8 +700,10 @@
       <label style="margin-bottom:5px">Saved Spot</label>
       <div class="btn-row">
         <button class="btn primary" onclick="savePosition()" title="Save current position (+)">⊕ Save Spot</button>
+      </div>
+      <div class="btn-row">
         <button class="btn" id="load-pos-btn" onclick="loadPosition()" title="Return to saved position (−)" disabled>↩ Load</button>
-        <button class="btn danger" id="clear-pos-btn" onclick="clearSavedPosition()" title="Clear saved position (Backspace)" disabled style="flex:0 0 auto;padding:7px 10px">✕</button>
+        <button class="btn danger" id="clear-pos-btn" onclick="clearSavedPosition()" title="Clear saved position (Backspace)" disabled style="flex:0 0 auto;width:auto;padding:7px 10px">✕ Clear</button>
       </div>
       <div id="saved-pos-status" style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim);margin-top:4px;text-align:center">No spot saved</div>
     </div>
