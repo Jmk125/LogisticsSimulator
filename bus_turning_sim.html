@@ -696,6 +696,14 @@
         <div class="pos-arrow-btn blank"></div>
       </div>
       <div class="info-box">Orient snaps to cardinal heading and straightens any trailer. Rotate preserves trailer articulation angle.</div>
+      <div style="border-top:1px solid var(--border);margin:8px 0 6px"></div>
+      <label style="margin-bottom:5px">Saved Spot</label>
+      <div class="btn-row">
+        <button class="btn primary" onclick="savePosition()" title="Save current position (+)">⊕ Save Spot</button>
+        <button class="btn" id="load-pos-btn" onclick="loadPosition()" title="Return to saved position (−)" disabled>↩ Load</button>
+        <button class="btn danger" id="clear-pos-btn" onclick="clearSavedPosition()" title="Clear saved position (Backspace)" disabled style="flex:0 0 auto;padding:7px 10px">✕</button>
+      </div>
+      <div id="saved-pos-status" style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim);margin-top:4px;text-align:center">No spot saved</div>
     </div>
   </div>
 
@@ -791,9 +799,11 @@
     <div class="hint-sep"></div>
     <span><kbd>Shift+←→</kbd> Rotate 15°</span>
     <div class="hint-sep"></div>
+    <span><kbd>+</kbd> Save Spot &nbsp;<kbd>−</kbd> Load &nbsp;<kbd>⌫</kbd> Clear Spot</span>
+    <div class="hint-sep"></div>
     <span><kbd>Space</kbd> Pan</span>
     <div class="hint-sep"></div>
-    <span><kbd>R</kbd> Reset &nbsp;<kbd>T</kbd> Trail &nbsp;<kbd>C</kbd> Clear</span>
+    <span><kbd>R</kbd> Reset &nbsp;<kbd>T</kbd> Trail &nbsp;<kbd>C</kbd> Clear Trail</span>
     <div class="hint-sep"></div>
     <span><kbd>1</kbd> Free &nbsp;<kbd>2</kbd> Auto &nbsp;<kbd>3</kbd> Steer</span>
   </div>
@@ -899,6 +909,9 @@ let bgOpacity = 0.6;
 // Scale measurement
 let scalePickPoints = [];
 let scaleMeasuring = false;
+
+// Saved position snapshot (for quick re-run from same spot)
+let savedPosition = null; // { rearX, rearY, frontX, frontY, trailer: {...} | null }
 
 // Tool mode
 let activeTool = 'select';
@@ -1244,6 +1257,7 @@ function redraw() {
   drawGrid();
   if (bgImage) drawBg();
   drawTrail();
+  drawGhost();   // saved-position ghost outline (behind live vehicle)
   drawArcs();
   drawTrailer();  // draw before tractor so cab renders on top at coupling point
   drawBus();
@@ -1997,6 +2011,111 @@ function applyScale() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SAVED POSITION (ghost overlay + save/load/clear)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function drawGhost() {
+  if (!savedPosition) return;
+  const props = getProps();
+
+  // Derive heading from saved front/rear
+  const dx  = savedPosition.frontX - savedPosition.rearX;
+  const dy  = savedPosition.frontY - savedPosition.rearY;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-6) return;
+  const hx = dx / len, hy = dy / len;
+  const rx = -hy, ry = hx;
+  const hw = props.bus_width / 2;
+  const fo = props.front_overhang, ro = props.rear_overhang;
+
+  ctx.save();
+  ctx.globalAlpha = 0.55;
+  ctx.strokeStyle = '#888';
+  ctx.fillStyle   = 'rgba(160,160,160,0.12)';
+  ctx.lineWidth   = 1.5;
+  ctx.setLineDash([5, 4]);
+
+  // ── Ghost tractor body ──
+  const bl = worldToScreen(savedPosition.rearX  - hx*ro - rx*hw, savedPosition.rearY  - hy*ro - ry*hw);
+  const br = worldToScreen(savedPosition.rearX  - hx*ro + rx*hw, savedPosition.rearY  - hy*ro + ry*hw);
+  const fl = worldToScreen(savedPosition.frontX + hx*fo - rx*hw, savedPosition.frontY + hy*fo - ry*hw);
+  const fr = worldToScreen(savedPosition.frontX + hx*fo + rx*hw, savedPosition.frontY + hy*fo + ry*hw);
+  ctx.beginPath();
+  ctx.moveTo(bl.x, bl.y); ctx.lineTo(br.x, br.y);
+  ctx.lineTo(fr.x, fr.y); ctx.lineTo(fl.x, fl.y);
+  ctx.closePath();
+  ctx.fill(); ctx.stroke();
+
+  // Front indicator line
+  ctx.setLineDash([]);
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(fl.x, fl.y); ctx.lineTo(fr.x, fr.y); ctx.stroke();
+
+  // ── Ghost trailer (if saved with one) ──
+  if (savedPosition.trailer && isArticulated && trailer.exists) {
+    const st = savedPosition.trailer;
+    const thx = st.hx, thy = st.hy;
+    const tpx = -thy, tpy = thx;
+    const thw = props.trailer_width / 2;
+    const tro = props.trailer_rear_overhang;
+    // Re-derive hitch from saved tractor state
+    const hitchX = savedPosition.rearX - hx * props.kingpin_setback;
+    const hitchY = savedPosition.rearY - hy * props.kingpin_setback;
+
+    ctx.setLineDash([5, 4]);
+    ctx.fillStyle = 'rgba(160,140,100,0.10)';
+    ctx.strokeStyle = '#777';
+    const tfl = worldToScreen(hitchX           - tpx * thw, hitchY           - tpy * thw);
+    const tfr = worldToScreen(hitchX           + tpx * thw, hitchY           + tpy * thw);
+    const tbl = worldToScreen(st.rearX - thx*tro - tpx*thw, st.rearY - thy*tro - tpy*thw);
+    const tbr = worldToScreen(st.rearX - thx*tro + tpx*thw, st.rearY - thy*tro + tpy*thw);
+    ctx.beginPath();
+    ctx.moveTo(tbl.x, tbl.y); ctx.lineTo(tbr.x, tbr.y);
+    ctx.lineTo(tfr.x, tfr.y); ctx.lineTo(tfl.x, tfl.y);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function savePosition() {
+  savedPosition = {
+    rearX:  bus.rearX,  rearY:  bus.rearY,
+    frontX: bus.frontX, frontY: bus.frontY,
+    trailer: (isArticulated && trailer.exists)
+      ? { rearX: trailer.rearX, rearY: trailer.rearY, hx: trailer.hx, hy: trailer.hy }
+      : null,
+  };
+  document.getElementById('load-pos-btn').disabled  = false;
+  document.getElementById('clear-pos-btn').disabled = false;
+  document.getElementById('saved-pos-status').textContent = '● Spot saved';
+  document.getElementById('saved-pos-status').style.color = 'var(--accent2)';
+}
+
+function loadPosition() {
+  if (!savedPosition) return;
+  const props = getProps();
+  bus.rearX  = savedPosition.rearX;  bus.rearY  = savedPosition.rearY;
+  bus.frontX = savedPosition.frontX; bus.frontY = savedPosition.frontY;
+  steerSmoothAngle = 0;
+  if (savedPosition.trailer && isArticulated && trailer.exists) {
+    trailer.rearX = savedPosition.trailer.rearX;
+    trailer.rearY = savedPosition.trailer.rearY;
+    trailer.hx    = savedPosition.trailer.hx;
+    trailer.hy    = savedPosition.trailer.hy;
+  }
+}
+
+function clearSavedPosition() {
+  savedPosition = null;
+  document.getElementById('load-pos-btn').disabled  = true;
+  document.getElementById('clear-pos-btn').disabled = true;
+  document.getElementById('saved-pos-status').textContent = 'No spot saved';
+  document.getElementById('saved-pos-status').style.color = 'var(--dim)';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // VEHICLE POSITION CONTROLS
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -2099,6 +2218,11 @@ document.addEventListener('keydown', e => {
   if (e.key === '1') setDriveMode('FREE');
   if (e.key === '2') setDriveMode('AUTO');
   if (e.key === '3') setDriveMode('STEER');
+
+  // Saved position shortcuts
+  if (e.key === '+' || e.key === '=') savePosition();
+  if (e.key === '-' || e.key === '_') loadPosition();
+  if (e.key === 'Backspace') { e.preventDefault(); clearSavedPosition(); }
 });
 document.addEventListener('keyup', e => {
   if (e.code === 'Space') setTool('select');
