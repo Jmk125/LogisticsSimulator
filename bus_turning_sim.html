@@ -329,7 +329,7 @@
   /* ── HUD ── */
   #hud {
     position: absolute;
-    bottom: 12px;
+    bottom: 36px;
     left: 12px;
     font-family: 'Share Tech Mono', monospace;
     font-size: 11px;
@@ -345,7 +345,7 @@
 
   #scale-bar {
     position: absolute;
-    bottom: 12px;
+    bottom: 36px;
     right: 12px;
     display: flex;
     flex-direction: column;
@@ -398,6 +398,72 @@
   .modal-box label { color: var(--text); font-size: 11px; margin-bottom: 3px; }
   .modal-row { display: flex; gap: 5px; margin-top: 10px; }
   .modal-row .btn { margin: 0; font-size: 11px; padding: 6px 8px; }
+
+  /* ── VEHICLE POSITION CONTROLS ── */
+  .pos-arrow-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 30px);
+    grid-template-rows: repeat(3, 28px);
+    gap: 3px;
+    margin: 0 auto 8px;
+    width: fit-content;
+  }
+  .pos-arrow-btn {
+    padding: 0;
+    border: 1px solid var(--border);
+    background: var(--panel2);
+    color: var(--dim);
+    font-size: 13px;
+    border-radius: 3px;
+    cursor: pointer;
+    text-align: center;
+    line-height: 28px;
+    transition: all 0.15s;
+    width: 30px;
+    height: 28px;
+  }
+  .pos-arrow-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .pos-arrow-btn.blank { visibility: hidden; pointer-events: none; border: none; background: none; }
+
+  /* ── KEY HINTS BAR ── */
+  #key-hints {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 4px 12px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: nowrap;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    color: var(--dim);
+    background: rgba(13,17,23,0.86);
+    border-top: 1px solid var(--border);
+    pointer-events: none;
+    backdrop-filter: blur(4px);
+    z-index: 4;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  #key-hints kbd {
+    display: inline-block;
+    background: rgba(30,48,72,0.85);
+    border: 1px solid #2a4060;
+    border-bottom-width: 2px;
+    border-radius: 2px;
+    padding: 0 4px;
+    font-family: inherit;
+    font-size: 9px;
+    color: #7a98b0;
+  }
+  #key-hints .hint-sep {
+    width: 1px;
+    height: 10px;
+    background: var(--border);
+    flex-shrink: 0;
+  }
 </style>
 </head>
 <body>
@@ -599,6 +665,40 @@
     </div>
   </div>
 
+  <!-- VEHICLE POSITION -->
+  <div class="section collapsed" id="sec-position">
+    <div class="section-header" onclick="toggleSection('sec-position')">
+      Vehicle Position <span class="arrow">▼</span>
+    </div>
+    <div class="section-body">
+      <label style="margin-bottom:5px">Orient Facing</label>
+      <div class="toggle-group">
+        <button class="toggle-btn" onclick="orientVehicle(0,1)" title="Face North (Ctrl+↑)">N</button>
+        <button class="toggle-btn" onclick="orientVehicle(0,-1)" title="Face South (Ctrl+↓)">S</button>
+        <button class="toggle-btn" onclick="orientVehicle(1,0)" title="Face East (Ctrl+→)">E</button>
+        <button class="toggle-btn" onclick="orientVehicle(-1,0)" title="Face West (Ctrl+←)">W</button>
+      </div>
+      <label style="margin-bottom:5px">Rotate</label>
+      <div class="btn-row">
+        <button class="btn" onclick="rotateVehicleLeft()" title="Rotate left 15° (Shift+←)">↺ Left 15°</button>
+        <button class="btn" onclick="rotateVehicleRight()" title="Rotate right 15° (Shift+→)">↻ Right 15°</button>
+      </div>
+      <label style="margin-bottom:5px">Move Position</label>
+      <div class="pos-arrow-grid">
+        <div class="pos-arrow-btn blank"></div>
+        <button class="pos-arrow-btn" onclick="moveVehicle(0,0.3048)" title="Move up 1ft (↑)">▲</button>
+        <div class="pos-arrow-btn blank"></div>
+        <button class="pos-arrow-btn" onclick="moveVehicle(-0.3048,0)" title="Move left 1ft (←)">◀</button>
+        <div class="pos-arrow-btn blank"></div>
+        <button class="pos-arrow-btn" onclick="moveVehicle(0.3048,0)" title="Move right 1ft (→)">▶</button>
+        <div class="pos-arrow-btn blank"></div>
+        <button class="pos-arrow-btn" onclick="moveVehicle(0,-0.3048)" title="Move down 1ft (↓)">▼</button>
+        <div class="pos-arrow-btn blank"></div>
+      </div>
+      <div class="info-box">Orient snaps to cardinal heading and straightens any trailer. Rotate preserves trailer articulation angle.</div>
+    </div>
+  </div>
+
   <!-- TRAIL -->
   <div class="section collapsed" id="sec-trail">
     <div class="section-header" onclick="toggleSection('sec-trail')">
@@ -682,6 +782,20 @@
   <div id="scale-bar">
     <div class="scale-line" id="scale-bar-line" style="width:80px"></div>
     <div class="scale-label" id="scale-bar-label">— m</div>
+  </div>
+
+  <div id="key-hints">
+    <span><kbd>↑↓←→</kbd> Move 1ft</span>
+    <div class="hint-sep"></div>
+    <span><kbd>Ctrl+↑↓←→</kbd> Orient N/S/E/W</span>
+    <div class="hint-sep"></div>
+    <span><kbd>Shift+←→</kbd> Rotate 15°</span>
+    <div class="hint-sep"></div>
+    <span><kbd>Space</kbd> Pan</span>
+    <div class="hint-sep"></div>
+    <span><kbd>R</kbd> Reset &nbsp;<kbd>T</kbd> Trail &nbsp;<kbd>C</kbd> Clear</span>
+    <div class="hint-sep"></div>
+    <span><kbd>1</kbd> Free &nbsp;<kbd>2</kbd> Auto &nbsp;<kbd>3</kbd> Steer</span>
   </div>
 </div>
 
@@ -1883,11 +1997,101 @@ function applyScale() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// VEHICLE POSITION CONTROLS
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Orient the vehicle to face an exact heading (hx, hy must be a unit vector).
+// Keeps the rear axle pinned in place and straightens any trailer.
+function orientVehicle(hx, hy) {
+  const props = getProps();
+  bus.frontX = bus.rearX + hx * props.wheelbase;
+  bus.frontY = bus.rearY + hy * props.wheelbase;
+  steerSmoothAngle = 0;
+  if (isArticulated && trailer.exists) {
+    // Straighten trailer so it's inline with the tractor
+    trailer.hx = hx;
+    trailer.hy = hy;
+    const hitch = getHitchPos(props);
+    trailer.rearX = hitch.x - hx * props.trailer_wheelbase;
+    trailer.rearY = hitch.y - hy * props.trailer_wheelbase;
+  }
+}
+
+// Rotate the entire vehicle assembly by `angle` radians (+ = CCW / left on screen).
+// Pivots around the tractor rear axle and preserves the trailer articulation angle.
+function rotateVehicleBy(angle) {
+  const props = getProps();
+  const { hx, hy } = getBusHeading();
+  const cos = Math.cos(angle), sin = Math.sin(angle);
+
+  // Rotate tractor heading
+  const nhx = hx * cos - hy * sin;
+  const nhy = hx * sin + hy * cos;
+  const nl  = Math.hypot(nhx, nhy);
+  const fx  = nhx / nl, fy = nhy / nl;
+  bus.frontX = bus.rearX + fx * props.wheelbase;
+  bus.frontY = bus.rearY + fy * props.wheelbase;
+  steerSmoothAngle = 0;
+
+  if (isArticulated && trailer.exists) {
+    // Rotate trailer heading by the same angle to keep articulation angle intact
+    const nthx = trailer.hx * cos - trailer.hy * sin;
+    const nthy = trailer.hx * sin + trailer.hy * cos;
+    const tl   = Math.hypot(nthx, nthy);
+    trailer.hx = nthx / tl;
+    trailer.hy = nthy / tl;
+    const hitch = getHitchPos(props);
+    trailer.rearX = hitch.x - trailer.hx * props.trailer_wheelbase;
+    trailer.rearY = hitch.y - trailer.hy * props.trailer_wheelbase;
+  }
+}
+
+function rotateVehicleLeft()  { rotateVehicleBy( Math.PI / 12); }  // +15°
+function rotateVehicleRight() { rotateVehicleBy(-Math.PI / 12); }  // −15°
+
+// Translate the entire vehicle (tractor + trailer) by (dx, dy) in world meters.
+function moveVehicle(dx, dy) {
+  bus.rearX  += dx;  bus.rearY  += dy;
+  bus.frontX += dx;  bus.frontY += dy;
+  if (isArticulated && trailer.exists) {
+    trailer.rearX += dx;
+    trailer.rearY += dy;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // KEYBOARD SHORTCUTS
 // ─────────────────────────────────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
   if (e.code === 'Space') { e.preventDefault(); setTool('pan'); }
+
+  // Arrow-key vehicle controls
+  const isArrow = e.key === 'ArrowUp' || e.key === 'ArrowDown' ||
+                  e.key === 'ArrowLeft' || e.key === 'ArrowRight';
+  if (isArrow) {
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) {
+      // Ctrl+Arrow → orient to cardinal direction
+      if (e.key === 'ArrowUp')    orientVehicle( 0,  1);
+      if (e.key === 'ArrowDown')  orientVehicle( 0, -1);
+      if (e.key === 'ArrowLeft')  orientVehicle(-1,  0);
+      if (e.key === 'ArrowRight') orientVehicle( 1,  0);
+    } else if (e.shiftKey) {
+      // Shift+Arrow → rotate 15°
+      if (e.key === 'ArrowLeft')  rotateVehicleLeft();
+      if (e.key === 'ArrowRight') rotateVehicleRight();
+    } else {
+      // Arrow → translate 1ft in screen-space cardinal direction
+      const step = 0.3048;
+      if (e.key === 'ArrowUp')    moveVehicle( 0,  step);
+      if (e.key === 'ArrowDown')  moveVehicle( 0, -step);
+      if (e.key === 'ArrowLeft')  moveVehicle(-step,  0);
+      if (e.key === 'ArrowRight') moveVehicle( step,  0);
+    }
+    return;
+  }
+
   if (e.key === 'r' || e.key === 'R') resetBus();
   if (e.key === 't' || e.key === 'T') toggleTrail();
   if (e.key === 'c' || e.key === 'C') clearTrail();
