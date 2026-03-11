@@ -579,6 +579,13 @@
           </div>
         </div>
         <div class="field">
+          <label>Trailer Nose Overhang (ft)</label>
+          <div class="num-with-unit">
+            <input type="number" id="trailer_nose_overhang" value="3.0" min="0" max="8" step="0.1" oninput="onDimChange()">
+            <span class="unit-label">ft</span>
+          </div>
+        </div>
+        <div class="field">
           <label>Trailer Width (ft)</label>
           <div class="num-with-unit">
             <input type="number" id="trailer_width" value="8.5" min="4" max="14" step="0.1" oninput="onDimChange()">
@@ -853,17 +860,17 @@ const PRESETS = {
   SEMI53: {
     wheelbase:6.10, bus_width:2.59, front_overhang:1.22, rear_overhang:0.61, min_turn_radius:12.19,
     is_articulated:true, kingpin_setback:0.61,
-    trailer_wheelbase:12.50, trailer_rear_overhang:1.22, trailer_width:2.59,
+    trailer_wheelbase:12.50, trailer_rear_overhang:1.22, trailer_width:2.59, trailer_nose_overhang:0.91,
   },
   SEMI48: {
     wheelbase:6.10, bus_width:2.59, front_overhang:1.22, rear_overhang:0.61, min_turn_radius:12.19,
     is_articulated:true, kingpin_setback:0.61,
-    trailer_wheelbase:11.58, trailer_rear_overhang:1.22, trailer_width:2.59,
+    trailer_wheelbase:11.58, trailer_rear_overhang:1.22, trailer_width:2.59, trailer_nose_overhang:0.91,
   },
   SEMI28: {
     wheelbase:4.88, bus_width:2.59, front_overhang:0.91, rear_overhang:0.30, min_turn_radius:10.67,
     is_articulated:true, kingpin_setback:0.30,
-    trailer_wheelbase:6.71, trailer_rear_overhang:0.61, trailer_width:2.59,
+    trailer_wheelbase:6.71, trailer_rear_overhang:0.61, trailer_width:2.59, trailer_nose_overhang:0.61,
   },
 };
 
@@ -984,10 +991,11 @@ function getProps() {
     is_articulated:  isArticulated,
   };
   if (isArticulated) {
-    props.kingpin_setback       = (parseFloat(document.getElementById('kingpin_setback').value)       || 2.0) * FT;
-    props.trailer_wheelbase     = (parseFloat(document.getElementById('trailer_wheelbase').value)     || 37.5) * FT;
-    props.trailer_rear_overhang = (parseFloat(document.getElementById('trailer_rear_overhang').value) || 3.0) * FT;
-    props.trailer_width         = (parseFloat(document.getElementById('trailer_width').value)         || 8.5) * FT;
+    props.kingpin_setback        = (parseFloat(document.getElementById('kingpin_setback').value)        || 2.0) * FT;
+    props.trailer_wheelbase      = (parseFloat(document.getElementById('trailer_wheelbase').value)      || 37.5) * FT;
+    props.trailer_rear_overhang  = (parseFloat(document.getElementById('trailer_rear_overhang').value)  || 3.0) * FT;
+    props.trailer_width          = (parseFloat(document.getElementById('trailer_width').value)          || 8.5) * FT;
+    props.trailer_nose_overhang  = (parseFloat(document.getElementById('trailer_nose_overhang').value)  || 3.0) * FT;
   }
   return props;
 }
@@ -1211,12 +1219,15 @@ function recordTrailStep(props) {
     const tpx = -thy, tpy = thx;
     const thw = props.trailer_width / 2;
     const tro = props.trailer_rear_overhang;
+    const tno = props.trailer_nose_overhang || 0;
     const hitch = getHitchPos(props);
+    const noseFrontX = hitch.x + thx * tno;
+    const noseFrontY = hitch.y + thy * tno;
     trailerEntry = {
-      fl: { x: hitch.x       - tpx * thw,          y: hitch.y       - tpy * thw          },
-      fr: { x: hitch.x       + tpx * thw,          y: hitch.y       + tpy * thw          },
-      rl: { x: trailer.rearX - thx * tro - tpx * thw, y: trailer.rearY - thy * tro - tpy * thw },
-      rr: { x: trailer.rearX - thx * tro + tpx * thw, y: trailer.rearY - thy * tro + tpy * thw },
+      fl: { x: noseFrontX    - tpx * thw,              y: noseFrontY    - tpy * thw              },
+      fr: { x: noseFrontX    + tpx * thw,              y: noseFrontY    + tpy * thw              },
+      rl: { x: trailer.rearX - thx * tro - tpx * thw,  y: trailer.rearY - thy * tro - tpy * thw },
+      rr: { x: trailer.rearX - thx * tro + tpx * thw,  y: trailer.rearY - thy * tro + tpy * thw },
     };
   }
 
@@ -1261,8 +1272,8 @@ function redraw() {
   drawTrail();
   drawGhost();   // saved-position ghost outline (behind live vehicle)
   drawArcs();
-  drawTrailer();  // draw before tractor so cab renders on top at coupling point
-  drawBus();
+  drawBus();      // draw first so trailer renders on top at coupling point
+  drawTrailer();  // trailer sits atop the fifth-wheel — drawn over the cab rear
   if (scaleMeasuring) drawScalePicks();
   updateHUD();
   updateScaleBar();
@@ -1447,20 +1458,69 @@ function drawBus() {
   const fo = props.front_overhang;
   const ro = props.rear_overhang;
 
-  // Body corners
-  const bl = worldToScreen(bus.rearX  - hx*ro - rx*hw, bus.rearY  - hy*ro - ry*hw);
-  const br = worldToScreen(bus.rearX  - hx*ro + rx*hw, bus.rearY  - hy*ro + ry*hw);
-  const fl = worldToScreen(bus.frontX + hx*fo - rx*hw, bus.frontY + hy*fo - ry*hw);
-  const fr = worldToScreen(bus.frontX + hx*fo + rx*hw, bus.frontY + hy*fo + ry*hw);
-
   ctx.save();
 
-  // Body fill
+  if (props.is_articulated) {
+    // ── For semi trucks: draw the fifth-wheel deck (frame behind cab) separately ──
+    // The deck is the flat platform between the rear axle and the back of the cab,
+    // where the fifth-wheel coupling sits. It goes under the trailer nose.
+    const deckFrontX = bus.rearX, deckFrontY = bus.rearY;  // rear axle line
+    const deckHw = hw * 0.88;  // deck is slightly narrower than the cab
+    const dfl = worldToScreen(deckFrontX - rx*deckHw, deckFrontY - ry*deckHw);
+    const dfr = worldToScreen(deckFrontX + rx*deckHw, deckFrontY + ry*deckHw);
+    const dbl = worldToScreen(bus.rearX - hx*ro - rx*deckHw, bus.rearY - hy*ro - ry*deckHw);
+    const dbr = worldToScreen(bus.rearX - hx*ro + rx*deckHw, bus.rearY - hy*ro + ry*deckHw);
+    ctx.beginPath();
+    ctx.moveTo(dbl.x, dbl.y); ctx.lineTo(dbr.x, dbr.y);
+    ctx.lineTo(dfr.x, dfr.y); ctx.lineTo(dfl.x, dfl.y);
+    ctx.closePath();
+    ctx.fillStyle   = 'rgba(20,70,160,0.45)';
+    ctx.fill();
+    ctx.strokeStyle = '#3a7ecc';
+    ctx.lineWidth   = 1;
+    ctx.stroke();
+  }
+
+  // ── Cab body ──
+  // For articulated trucks: chamfer the rear corners to represent the clearance
+  // zone that allows the trailer to swing without hitting the cab corners.
+  // Chamfer size is bounded so it stays visually meaningful.
+  const c = props.is_articulated
+    ? Math.min(hw * 0.22, ro * 0.5)   // ~0.28 m on a standard semi
+    : 0;
+
+  // World-space corner positions (before chamfering)
+  const blX = bus.rearX  - hx*ro - rx*hw,  blY = bus.rearY  - hy*ro - ry*hw;
+  const brX = bus.rearX  - hx*ro + rx*hw,  brY = bus.rearY  - hy*ro + ry*hw;
+  const frX = bus.frontX + hx*fo + rx*hw,  frY = bus.frontY + hy*fo + ry*hw;
+  const flX = bus.frontX + hx*fo - rx*hw,  flY = bus.frontY + hy*fo - ry*hw;
+
+  const bl = worldToScreen(blX, blY);
+  const br = worldToScreen(brX, brY);
+  const fl = worldToScreen(flX, flY);
+  const fr = worldToScreen(frX, frY);
+
   ctx.beginPath();
-  ctx.moveTo(bl.x, bl.y);
-  ctx.lineTo(br.x, br.y);
-  ctx.lineTo(fr.x, fr.y);
-  ctx.lineTo(fl.x, fl.y);
+  if (c > 0) {
+    // Hexagonal cab: front corners square, rear corners chamfered
+    // bl_side = on left edge, c forward from back corner
+    // bl_rear = on rear edge, c from left corner toward centre
+    const bl_side = worldToScreen(blX + hx*c, blY + hy*c);
+    const bl_rear = worldToScreen(blX + rx*c, blY + ry*c);
+    const br_side = worldToScreen(brX + hx*c, brY + hy*c);
+    const br_rear = worldToScreen(brX - rx*c, brY - ry*c);
+    ctx.moveTo(bl_side.x, bl_side.y);
+    ctx.lineTo(bl_rear.x, bl_rear.y);
+    ctx.lineTo(br_rear.x, br_rear.y);
+    ctx.lineTo(br_side.x, br_side.y);
+    ctx.lineTo(fr.x, fr.y);
+    ctx.lineTo(fl.x, fl.y);
+  } else {
+    ctx.moveTo(bl.x, bl.y);
+    ctx.lineTo(br.x, br.y);
+    ctx.lineTo(fr.x, fr.y);
+    ctx.lineTo(fl.x, fl.y);
+  }
   ctx.closePath();
   ctx.fillStyle   = 'rgba(26,107,224,0.35)';
   ctx.fill();
@@ -1515,11 +1575,19 @@ function drawTrailer() {
   const tpx = -thy, tpy = thx;          // trailer right perpendicular (avoiding 'try' keyword)
   const hw  = props.trailer_width / 2;
   const ro  = props.trailer_rear_overhang;
+  // trailer_nose_overhang: how far the trailer box extends FORWARD of the kingpin.
+  // This region physically sits on top of the cab's fifth-wheel deck and is drawn
+  // over the cab so the overlap is clearly visible.
+  const tno = props.trailer_nose_overhang || 0;
   const hitch = getHitchPos(props);
 
-  // Trailer body corners: front = hitch, rear = rearX - thx*ro
-  const fl = worldToScreen(hitch.x       - tpx * hw,            hitch.y       - tpy * hw           );
-  const fr = worldToScreen(hitch.x       + tpx * hw,            hitch.y       + tpy * hw           );
+  // Trailer body corners:
+  //   front = kingpin + tno along trailer heading (nose overhangs the cab deck)
+  //   rear  = trailer rearX - thx*ro
+  const noseFrontX = hitch.x + thx * tno;
+  const noseFrontY = hitch.y + thy * tno;
+  const fl = worldToScreen(noseFrontX    - tpx * hw,            noseFrontY    - tpy * hw           );
+  const fr = worldToScreen(noseFrontX    + tpx * hw,            noseFrontY    + tpy * hw           );
   const bl = worldToScreen(trailer.rearX - thx * ro - tpx * hw, trailer.rearY - thy * ro - tpy * hw);
   const br = worldToScreen(trailer.rearX - thx * ro + tpx * hw, trailer.rearY - thy * ro + tpy * hw);
 
@@ -1768,10 +1836,11 @@ function applyPreset() {
   document.getElementById('trailer-fields').style.display  = isArticulated ? '' : 'none';
   document.getElementById('trailer-hint').style.display    = isArticulated ? 'none' : '';
   if (isArticulated) {
-    document.getElementById('kingpin_setback').value       = (d.kingpin_setback       * M2FT).toFixed(1);
-    document.getElementById('trailer_wheelbase').value     = (d.trailer_wheelbase     * M2FT).toFixed(1);
-    document.getElementById('trailer_rear_overhang').value = (d.trailer_rear_overhang * M2FT).toFixed(1);
-    document.getElementById('trailer_width').value         = (d.trailer_width         * M2FT).toFixed(1);
+    document.getElementById('kingpin_setback').value        = (d.kingpin_setback        * M2FT).toFixed(1);
+    document.getElementById('trailer_wheelbase').value      = (d.trailer_wheelbase      * M2FT).toFixed(1);
+    document.getElementById('trailer_rear_overhang').value  = (d.trailer_rear_overhang  * M2FT).toFixed(1);
+    document.getElementById('trailer_nose_overhang').value  = ((d.trailer_nose_overhang || 0.91) * M2FT).toFixed(1);
+    document.getElementById('trailer_width').value          = (d.trailer_width          * M2FT).toFixed(1);
     document.getElementById('sec-trailer').classList.remove('collapsed');
   }
 
@@ -1791,12 +1860,12 @@ function onDimChange() {
   const arcFt = parseFloat(document.getElementById('arc_dist').value) || 100;
   document.getElementById('arc-dist-label').textContent = arcFt + ' ft';
 
-  // Trailer body length (from kingpin to rear bumper)
+  // Trailer body length (nose overhang + wheelbase + rear overhang)
   if (isArticulated) {
-    const kp  = parseFloat(document.getElementById('kingpin_setback').value) || 0;
     const twb = parseFloat(document.getElementById('trailer_wheelbase').value) || 0;
     const tro = parseFloat(document.getElementById('trailer_rear_overhang').value) || 0;
-    const trailerFt = twb + tro;  // visible body length behind hitch
+    const tno = parseFloat(document.getElementById('trailer_nose_overhang').value) || 0;
+    const trailerFt = tno + twb + tro;  // total trailer body length
     document.getElementById('trailer-length-display').textContent =
       `${trailerFt.toFixed(1)} ft  (${(trailerFt*0.3048).toFixed(2)} m)`;
   }
@@ -2060,15 +2129,18 @@ function drawGhost() {
     const tpx = -thy, tpy = thx;
     const thw = props.trailer_width / 2;
     const tro = props.trailer_rear_overhang;
+    const tno = props.trailer_nose_overhang || 0;
     // Re-derive hitch from saved tractor state
     const hitchX = savedPosition.rearX - hx * props.kingpin_setback;
     const hitchY = savedPosition.rearY - hy * props.kingpin_setback;
+    const noseFrontX = hitchX + thx * tno;
+    const noseFrontY = hitchY + thy * tno;
 
     ctx.setLineDash([5, 4]);
     ctx.fillStyle = 'rgba(160,140,100,0.10)';
     ctx.strokeStyle = '#777';
-    const tfl = worldToScreen(hitchX           - tpx * thw, hitchY           - tpy * thw);
-    const tfr = worldToScreen(hitchX           + tpx * thw, hitchY           + tpy * thw);
+    const tfl = worldToScreen(noseFrontX           - tpx * thw, noseFrontY           - tpy * thw);
+    const tfr = worldToScreen(noseFrontX           + tpx * thw, noseFrontY           + tpy * thw);
     const tbl = worldToScreen(st.rearX - thx*tro - tpx*thw, st.rearY - thy*tro - tpy*thw);
     const tbr = worldToScreen(st.rearX - thx*tro + tpx*thw, st.rearY - thy*tro + tpy*thw);
     ctx.beginPath();
