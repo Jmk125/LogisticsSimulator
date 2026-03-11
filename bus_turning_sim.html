@@ -946,7 +946,6 @@ let scaleMeasuring = false;
 let savedPosition = null; // { rearX, rearY, frontX, frontY, trailer: {...} | null }
 
 let articulationCache = { key: '', maxDeg: null };
-let autoArcSide = 0; // -1 right, +1 left, 0 straight
 
 // Tool mode
 let activeTool = 'select';
@@ -1079,30 +1078,7 @@ function constrainFront(props, targetX, targetY) {
   if (driveMode === 'LEFT')     return arcSnap(+1);
   if (driveMode === 'RIGHT')    return arcSnap(-1);
 
-  if (driveMode === 'AUTO') {
-    const { px: rx, py: ry } = perpRight(hx, hy);
-    const relX = targetX - bus.rearX, relY = targetY - bus.rearY;
-    const lateral = relX*rx + relY*ry;
-    const holdBand = Math.max(R * 0.06, 0.16);
-    const switchBand = Math.max(R * 0.14, 0.45);
-
-    if (autoArcSide === 0) {
-      if (Math.abs(lateral) <= holdBand) return straightSnap();
-      autoArcSide = lateral < 0 ? +1 : -1;
-    } else {
-      const targetSide = lateral < 0 ? +1 : -1;
-      if (Math.abs(lateral) < holdBand * 0.75) {
-        autoArcSide = 0;
-        return straightSnap();
-      }
-      if (targetSide !== autoArcSide && Math.abs(lateral) > switchBand) {
-        autoArcSide = targetSide;
-      }
-    }
-
-    if (autoArcSide === 0) return straightSnap();
-    return arcSnap(autoArcSide);
-  }
+  if (driveMode === 'AUTO') return straightSnap();
 
   // FREE or STEER: handled elsewhere
   return { nx: targetX, ny: targetY };
@@ -1110,6 +1086,7 @@ function constrainFront(props, targetX, targetY) {
 
 // Steering pad mode (from addon: positional steering relative to front axle)
 let steerSmoothAngle = 0;
+let autoFollowSpeed = 0;
 function steeringPadStep(props, targetX, targetY) {
   const { hx, hy } = getBusHeading();
   const { px: rx, py: ry } = perpRight(hx, hy);
@@ -1161,6 +1138,75 @@ function steeringPadStep(props, targetX, targetY) {
 
   bus.rearX  = newRear.x;
   bus.rearY  = newRear.y;
+  bus.frontX = newRear.x + newHead.hx * wb;
+  bus.frontY = newRear.y + newHead.hy * wb;
+}
+
+// Continuous constrained cursor-follow mode:
+// keeps steering within the wheel-cut limit while allowing smooth free dragging.
+function constrainedCursorStep(props, targetX, targetY) {
+  const { hx, hy } = getBusHeading();
+  const { px: rx, py: ry } = perpRight(hx, hy);
+  const wb = props.wheelbase;
+  const maxSteer = Math.atan(wb / Math.max(props.min_turn_radius, 0.001));
+
+  const toX = targetX - bus.frontX;
+  const toY = targetY - bus.frontY;
+  const fwd = toX*hx + toY*hy;
+  const lat = toX*rx + toY*ry;
+  const dist = Math.hypot(toX, toY);
+
+  const lookAhead = Math.max(wb * 0.45, 0.8);
+  const steerTarget = Math.max(
+    -maxSteer,
+    Math.min(maxSteer, Math.atan2(-lat, Math.abs(fwd) + lookAhead))
+  );
+
+  steerSmoothAngle += (steerTarget - steerSmoothAngle) * 0.32;
+  steerSmoothAngle  = Math.max(-maxSteer, Math.min(maxSteer, steerSmoothAngle));
+
+  const minStep = Math.max(Math.min(wb * 0.07, 0.75), 0.12);
+  const maxStep = Math.max(wb * 0.32, 1.2);
+  const catchup = Math.min(dist * 0.28, Math.max(wb * 0.22, 0.9));
+  const reverseBand = Math.max(wb * 0.35, 0.9);
+
+  let targetSpeed = 0;
+  if (fwd > 0) {
+    targetSpeed = Math.min(maxStep, minStep + catchup + fwd * 0.18);
+  } else if (fwd < -reverseBand) {
+    const revReq = (-fwd - reverseBand) * 0.14;
+    targetSpeed = -Math.min(maxStep * 0.55, Math.max(minStep * 0.5, revReq));
+  }
+
+  autoFollowSpeed += (targetSpeed - autoFollowSpeed) * 0.24;
+  if (Math.abs(targetSpeed) < 1e-4 && Math.abs(autoFollowSpeed) < 0.01) autoFollowSpeed = 0;
+  let fwdStep = autoFollowSpeed;
+
+  if (dist < Math.max(wb * 0.008, 0.02) && Math.abs(fwd) < reverseBand * 0.35) {
+    fwdStep = 0;
+    autoFollowSpeed = 0;
+  }
+
+  let newRear = { x: bus.rearX, y: bus.rearY };
+  let newHead = { hx, hy };
+  if (Math.abs(fwdStep) > 1e-9 && Math.abs(steerSmoothAngle) > 1e-6) {
+    const tanv = Math.tan(steerSmoothAngle);
+    const R = wb / tanv;
+    const { px: lx, py: ly } = perpLeft(hx, hy);
+    const cx = bus.rearX + lx * R, cy = bus.rearY + ly * R;
+    const relRx = bus.rearX - cx, relRy = bus.rearY - cy;
+    const yaw = fwdStep / R;
+    const { rx: nrx, ry: nry } = rotVec2D(relRx, relRy, yaw);
+    newRear = { x: cx + nrx, y: cy + nry };
+    const { rx: nhx, ry: nhy } = rotVec2D(hx, hy, yaw);
+    const hl = Math.hypot(nhx, nhy);
+    newHead = { hx: nhx/hl, hy: nhy/hl };
+  } else if (Math.abs(fwdStep) > 1e-9) {
+    newRear = { x: bus.rearX + hx*fwdStep, y: bus.rearY + hy*fwdStep };
+  }
+
+  bus.rearX = newRear.x;
+  bus.rearY = newRear.y;
   bus.frontX = newRear.x + newHead.hx * wb;
   bus.frontY = newRear.y + newHead.hy * wb;
 }
@@ -1907,7 +1953,7 @@ function onMouseDown(e) {
       bus.dragging = true;
       bus.dragTarget = 'front';
       steerSmoothAngle = 0;
-      autoArcSide = 0;
+      autoFollowSpeed = 0;
       canvas.style.cursor = 'grabbing';
     }
   }
@@ -1937,6 +1983,8 @@ function onMouseMove(e) {
     bus.frontX = tx;
     bus.frontY = ty;
     snapRear(props);
+  } else if (driveMode === 'AUTO') {
+    constrainedCursorStep(props, tx, ty);
   } else if (driveMode === 'STEER') {
     steeringPadStep(props, tx, ty);
   } else {
@@ -2087,14 +2135,14 @@ function onArticulatedToggle() {
 function setDriveMode(mode) {
   driveMode = mode;
   steerSmoothAngle = 0;
-  autoArcSide = 0;
+  autoFollowSpeed = 0;
   document.querySelectorAll('.radio-dot').forEach(d => d.classList.remove('on'));
   document.getElementById('radio-' + mode).classList.add('on');
   document.getElementById('steer-sensitivity-row').style.display =
     mode === 'STEER' ? 'block' : 'none';
   const infos = {
     FREE:     'Drag the bus front axle (blue dot) freely anywhere.',
-    AUTO:     'Cursor auto-selects left/straight/right arc based on position.',
+    AUTO:     'Smooth constrained follow: drag freely while turn rate stays within wheel-cut limit.',
     LEFT:     'Front axle snaps to the minimum left-turn radius arc.',
     RIGHT:    'Front axle snaps to the minimum right-turn radius arc.',
     STRAIGHT: 'Bus moves straight along its current heading.',
@@ -2153,7 +2201,7 @@ function resetBus() {
   bus.rearX  = 0; bus.rearY  = 0;
   bus.frontX = 0; bus.frontY = props.wheelbase;
   steerSmoothAngle = 0;
-  autoArcSide = 0;
+  autoFollowSpeed = 0;
   initTrailer(props);  // place trailer in a straight line behind the tractor
 }
 
@@ -2378,7 +2426,7 @@ function loadPosition() {
   bus.rearX  = savedPosition.rearX;  bus.rearY  = savedPosition.rearY;
   bus.frontX = savedPosition.frontX; bus.frontY = savedPosition.frontY;
   steerSmoothAngle = 0;
-  autoArcSide = 0;
+  autoFollowSpeed = 0;
   if (savedPosition.trailer && isArticulated && trailer.exists) {
     trailer.rearX = savedPosition.trailer.rearX;
     trailer.rearY = savedPosition.trailer.rearY;
@@ -2406,7 +2454,7 @@ function orientVehicle(hx, hy) {
   bus.frontX = bus.rearX + hx * props.wheelbase;
   bus.frontY = bus.rearY + hy * props.wheelbase;
   steerSmoothAngle = 0;
-  autoArcSide = 0;
+  autoFollowSpeed = 0;
   if (isArticulated && trailer.exists) {
     // Straighten trailer so it's inline with the tractor
     trailer.hx = hx;
@@ -2432,6 +2480,7 @@ function rotateVehicleBy(angle) {
   bus.frontX = bus.rearX + fx * props.wheelbase;
   bus.frontY = bus.rearY + fy * props.wheelbase;
   steerSmoothAngle = 0;
+  autoFollowSpeed = 0;
 
   if (isArticulated && trailer.exists) {
     // Rotate trailer heading by the same angle to keep articulation angle intact
