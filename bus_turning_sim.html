@@ -1086,6 +1086,7 @@ function constrainFront(props, targetX, targetY) {
 
 // Steering pad mode (from addon: positional steering relative to front axle)
 let steerSmoothAngle = 0;
+let autoFollowSpeed = 0;
 function steeringPadStep(props, targetX, targetY) {
   const { hx, hy } = getBusHeading();
   const { px: rx, py: ry } = perpRight(hx, hy);
@@ -1164,11 +1165,27 @@ function constrainedCursorStep(props, targetX, targetY) {
   steerSmoothAngle += (steerTarget - steerSmoothAngle) * 0.32;
   steerSmoothAngle  = Math.max(-maxSteer, Math.min(maxSteer, steerSmoothAngle));
 
-  const minStep = Math.max(Math.min(wb * 0.08, 0.9), 0.18);
-  const catchup = Math.min(dist * 0.35, Math.max(wb * 0.35, 1.3));
-  const stepMag = minStep + catchup;
-  let fwdStep = stepMag * (fwd >= 0 ? 1 : -1);
-  if (dist < Math.max(wb * 0.01, 0.025)) fwdStep = 0;
+  const minStep = Math.max(Math.min(wb * 0.07, 0.75), 0.12);
+  const maxStep = Math.max(wb * 0.32, 1.2);
+  const catchup = Math.min(dist * 0.28, Math.max(wb * 0.22, 0.9));
+  const reverseBand = Math.max(wb * 0.35, 0.9);
+
+  let targetSpeed = 0;
+  if (fwd > 0) {
+    targetSpeed = Math.min(maxStep, minStep + catchup + fwd * 0.18);
+  } else if (fwd < -reverseBand) {
+    const revReq = (-fwd - reverseBand) * 0.14;
+    targetSpeed = -Math.min(maxStep * 0.55, Math.max(minStep * 0.5, revReq));
+  }
+
+  autoFollowSpeed += (targetSpeed - autoFollowSpeed) * 0.24;
+  if (Math.abs(targetSpeed) < 1e-4 && Math.abs(autoFollowSpeed) < 0.01) autoFollowSpeed = 0;
+  let fwdStep = autoFollowSpeed;
+
+  if (dist < Math.max(wb * 0.008, 0.02) && Math.abs(fwd) < reverseBand * 0.35) {
+    fwdStep = 0;
+    autoFollowSpeed = 0;
+  }
 
   let newRear = { x: bus.rearX, y: bus.rearY };
   let newHead = { hx, hy };
@@ -1936,6 +1953,7 @@ function onMouseDown(e) {
       bus.dragging = true;
       bus.dragTarget = 'front';
       steerSmoothAngle = 0;
+      autoFollowSpeed = 0;
       canvas.style.cursor = 'grabbing';
     }
   }
@@ -2117,6 +2135,7 @@ function onArticulatedToggle() {
 function setDriveMode(mode) {
   driveMode = mode;
   steerSmoothAngle = 0;
+  autoFollowSpeed = 0;
   document.querySelectorAll('.radio-dot').forEach(d => d.classList.remove('on'));
   document.getElementById('radio-' + mode).classList.add('on');
   document.getElementById('steer-sensitivity-row').style.display =
@@ -2182,6 +2201,7 @@ function resetBus() {
   bus.rearX  = 0; bus.rearY  = 0;
   bus.frontX = 0; bus.frontY = props.wheelbase;
   steerSmoothAngle = 0;
+  autoFollowSpeed = 0;
   initTrailer(props);  // place trailer in a straight line behind the tractor
 }
 
@@ -2406,6 +2426,7 @@ function loadPosition() {
   bus.rearX  = savedPosition.rearX;  bus.rearY  = savedPosition.rearY;
   bus.frontX = savedPosition.frontX; bus.frontY = savedPosition.frontY;
   steerSmoothAngle = 0;
+  autoFollowSpeed = 0;
   if (savedPosition.trailer && isArticulated && trailer.exists) {
     trailer.rearX = savedPosition.trailer.rearX;
     trailer.rearY = savedPosition.trailer.rearY;
@@ -2433,6 +2454,7 @@ function orientVehicle(hx, hy) {
   bus.frontX = bus.rearX + hx * props.wheelbase;
   bus.frontY = bus.rearY + hy * props.wheelbase;
   steerSmoothAngle = 0;
+  autoFollowSpeed = 0;
   if (isArticulated && trailer.exists) {
     // Straighten trailer so it's inline with the tractor
     trailer.hx = hx;
@@ -2458,6 +2480,7 @@ function rotateVehicleBy(angle) {
   bus.frontX = bus.rearX + fx * props.wheelbase;
   bus.frontY = bus.rearY + fy * props.wheelbase;
   steerSmoothAngle = 0;
+  autoFollowSpeed = 0;
 
   if (isArticulated && trailer.exists) {
     // Rotate trailer heading by the same angle to keep articulation angle intact
