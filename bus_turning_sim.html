@@ -624,7 +624,7 @@
       <div class="field">
         <label>Max Wheel-Cut Angle (deg)</label>
         <div class="num-with-unit">
-          <input type="number" id="max_steer_deg" value="32" min="5" max="89.5" step="0.5" oninput="onDimChange()">
+          <input type="number" id="max_steer_deg" value="32" step="0.1" oninput="onDimChange()">
           <span class="unit-label">°</span>
         </div>
       </div>
@@ -1050,6 +1050,18 @@ function rotVec2D(vx, vy, angle) {
   return { rx: vx*c - vy*s, ry: vx*s + vy*c };
 }
 
+function getConfiguredMaxSteerRad(props) {
+  const useSteer = document.getElementById('use_steer_input')?.checked;
+  if (useSteer) {
+    const deg = parseFloat(document.getElementById('max_steer_deg')?.value);
+    if (Number.isFinite(deg)) {
+      // Keep model numerically stable near tan(90°) singularity without editing user input.
+      return Math.min(Math.abs(deg), 89.9) * Math.PI / 180;
+    }
+  }
+  return Math.atan(props.wheelbase / Math.max(props.min_turn_radius, 0.001));
+}
+
 // Constrained front position modes  (matches Blender addon logic exactly)
 function constrainFront(props, targetX, targetY) {
   const { hx, hy } = getBusHeading();
@@ -1096,7 +1108,7 @@ function steeringPadStep(props, targetX, targetY) {
   const fwd  = relX*hx + relY*hy;
   const lat  = relX*rx + relY*ry;
   const wb   = props.wheelbase;
-  const maxSteer = Math.atan(wb / Math.max(props.min_turn_radius, 0.001));
+  const maxSteer = getConfiguredMaxSteerRad(props);
   const deadband  = Math.max(wb * 0.03, 0.08);
   const fwdDead   = Math.max(wb * 0.05, 0.10);
   const steerZone = Math.max(wb * (0.60 / Math.max(props.steer_sens, 0.05)), 0.60);
@@ -1149,7 +1161,7 @@ function constrainedCursorStep(props, targetX, targetY) {
   const { hx, hy } = getBusHeading();
   const { px: rx, py: ry } = perpRight(hx, hy);
   const wb = props.wheelbase;
-  const maxSteer = Math.atan(wb / Math.max(props.min_turn_radius, 0.001));
+  const maxSteer = getConfiguredMaxSteerRad(props);
 
   const toX = targetX - bus.frontX;
   const toY = targetY - bus.frontY;
@@ -2111,7 +2123,7 @@ function onDimChange() {
   radiusInput.style.opacity = useSteer ? '0.55' : '1';
   const effFt = computeEffectiveTurnRadiusFt();
   const wbFt = parseFloat(document.getElementById('wheelbase').value) || 0;
-  const effDeg = Math.atan(wbFt / Math.max(effFt, 0.01)) * 180 / Math.PI;
+  const effDeg = Math.atan(wbFt / Math.max(effFt, 1e-9)) * 180 / Math.PI;
   document.getElementById('effective-radius-display').textContent = `${effFt.toFixed(1)} ft  (${effDeg.toFixed(1)}°)`;
 
   // Trailer body length (nose overhang + wheelbase + rear overhang)
@@ -2129,13 +2141,13 @@ function computeEffectiveTurnRadiusFt() {
   const wbFt = parseFloat(document.getElementById('wheelbase').value) || 25;
   const useSteer = document.getElementById('use_steer_input').checked;
   if (useSteer) {
-    const rawDeg = parseFloat(document.getElementById('max_steer_deg').value) || 32;
-    const deg = Math.max(5, Math.min(89.5, rawDeg));
-    if (Math.abs(rawDeg - deg) > 1e-6) {
-      document.getElementById('max_steer_deg').value = deg.toFixed(1);
-    }
+    const deg = parseFloat(document.getElementById('max_steer_deg').value);
+    if (!Number.isFinite(deg)) return 1e6;
     const rad = deg * Math.PI / 180;
-    return wbFt / Math.max(Math.tan(rad), 0.02);
+    const t = Math.tan(rad);
+    if (Math.abs(t) < 1e-9) return 1e6; // effectively straight / infinite radius
+    const radius = wbFt / t;
+    return Math.abs(radius);
   }
   return parseFloat(document.getElementById('min_turn_radius').value) || 38;
 }
