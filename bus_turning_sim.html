@@ -1087,6 +1087,7 @@ function constrainFront(props, targetX, targetY) {
 // Steering pad mode (from addon: positional steering relative to front axle)
 let steerSmoothAngle = 0;
 let autoFollowSpeed = 0;
+let autoForwardBias = 0;
 function steeringPadStep(props, targetX, targetY) {
   const { hx, hy } = getBusHeading();
   const { px: rx, py: ry } = perpRight(hx, hy);
@@ -1157,9 +1158,11 @@ function constrainedCursorStep(props, targetX, targetY) {
   const dist = Math.hypot(toX, toY);
 
   const lookAhead = Math.max(wb * 0.45, 0.8);
+  const lateralSoftBand = Math.max(wb * 0.22, 0.8);
+  const softLat = lateralSoftBand * Math.tanh(lat / lateralSoftBand);
   const steerTarget = Math.max(
     -maxSteer,
-    Math.min(maxSteer, Math.atan2(-lat, Math.abs(fwd) + lookAhead))
+    Math.min(maxSteer, Math.atan2(-softLat, Math.abs(fwd) + lookAhead))
   );
 
   steerSmoothAngle += (steerTarget - steerSmoothAngle) * 0.32;
@@ -1169,13 +1172,23 @@ function constrainedCursorStep(props, targetX, targetY) {
   const maxStep = Math.max(wb * 0.32, 1.2);
   const catchup = Math.min(dist * 0.28, Math.max(wb * 0.22, 0.9));
   const reverseBand = Math.max(wb * 0.35, 0.9);
+  const forwardHoldBand = Math.max(wb * 0.30, 1.0);
 
   let targetSpeed = 0;
   if (fwd > 0) {
     targetSpeed = Math.min(maxStep, minStep + catchup + fwd * 0.18);
+  } else if (fwd > -forwardHoldBand && dist > forwardHoldBand) {
+    // Cursor can drift far to the turning side while constrained; keep creeping
+    // forward so the vehicle does not stutter-stop at the turn limit.
+    targetSpeed = minStep * 0.75 + Math.min(catchup * 0.6, maxStep * 0.35);
   } else if (fwd < -reverseBand) {
     const revReq = (-fwd - reverseBand) * 0.14;
     targetSpeed = -Math.min(maxStep * 0.55, Math.max(minStep * 0.5, revReq));
+  }
+
+  autoForwardBias += ((targetSpeed > 0 ? 1 : 0) - autoForwardBias) * 0.18;
+  if (targetSpeed > 0) {
+    targetSpeed += autoForwardBias * minStep * 0.35;
   }
 
   autoFollowSpeed += (targetSpeed - autoFollowSpeed) * 0.24;
@@ -1185,6 +1198,7 @@ function constrainedCursorStep(props, targetX, targetY) {
   if (dist < Math.max(wb * 0.008, 0.02) && Math.abs(fwd) < reverseBand * 0.35) {
     fwdStep = 0;
     autoFollowSpeed = 0;
+    autoForwardBias = 0;
   }
 
   let newRear = { x: bus.rearX, y: bus.rearY };
@@ -1954,6 +1968,7 @@ function onMouseDown(e) {
       bus.dragTarget = 'front';
       steerSmoothAngle = 0;
       autoFollowSpeed = 0;
+      autoForwardBias = 0;
       canvas.style.cursor = 'grabbing';
     }
   }
@@ -2136,6 +2151,7 @@ function setDriveMode(mode) {
   driveMode = mode;
   steerSmoothAngle = 0;
   autoFollowSpeed = 0;
+  autoForwardBias = 0;
   document.querySelectorAll('.radio-dot').forEach(d => d.classList.remove('on'));
   document.getElementById('radio-' + mode).classList.add('on');
   document.getElementById('steer-sensitivity-row').style.display =
@@ -2202,6 +2218,7 @@ function resetBus() {
   bus.frontX = 0; bus.frontY = props.wheelbase;
   steerSmoothAngle = 0;
   autoFollowSpeed = 0;
+  autoForwardBias = 0;
   initTrailer(props);  // place trailer in a straight line behind the tractor
 }
 
@@ -2427,6 +2444,7 @@ function loadPosition() {
   bus.frontX = savedPosition.frontX; bus.frontY = savedPosition.frontY;
   steerSmoothAngle = 0;
   autoFollowSpeed = 0;
+  autoForwardBias = 0;
   if (savedPosition.trailer && isArticulated && trailer.exists) {
     trailer.rearX = savedPosition.trailer.rearX;
     trailer.rearY = savedPosition.trailer.rearY;
@@ -2455,6 +2473,7 @@ function orientVehicle(hx, hy) {
   bus.frontY = bus.rearY + hy * props.wheelbase;
   steerSmoothAngle = 0;
   autoFollowSpeed = 0;
+  autoForwardBias = 0;
   if (isArticulated && trailer.exists) {
     // Straighten trailer so it's inline with the tractor
     trailer.hx = hx;
